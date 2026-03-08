@@ -163,17 +163,19 @@
                 <el-table-column prop="id" label="ID" width="60"></el-table-column>
                 <el-table-column prop="user_id" label="用户ID" width="80"></el-table-column>
                 <el-table-column prop="machine_id" label="柜机" width="90"></el-table-column>
-                <el-table-column prop="item_name" label="商品"></el-table-column>
+                <el-table-column prop="item_name" label="商品" min-width="120"></el-table-column>
                 <el-table-column prop="quantity" label="数量" width="70"></el-table-column>
-                <el-table-column prop="is_compliant" label="合规" width="70">
+                <el-table-column prop="is_compliant" label="合规状态" width="100">
                   <template #default="{row}">
                     <span :class="['tag', row.is_compliant ? 'tag-green' : 'tag-red']">
-                      {{ row.is_compliant ? '✅ 是' : '❌ 否' }}
+                      {{ row.is_compliant ? '✅ 合规' : '❌ 违规' }}
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="violation_reason" label="违规原因"></el-table-column>
-                <el-table-column prop="pickup_time" label="领取时间">
+                <el-table-column prop="violation_reason" label="违规原因" min-width="120">
+                  <template #default="{row}">{{ row.violation_reason || '-' }}</template>
+                </el-table-column>
+                <el-table-column prop="pickup_time" label="领取时间" width="160">
                   <template #default="{row}">{{ formatDate(row.pickup_time) }}</template>
                 </el-table-column>
               </el-table>
@@ -182,17 +184,17 @@
           
           <!-- 数据分析 -->
           <div v-if="currentView === 'analysis'">
-            <div class="stats-grid">
+            <div class="analysis-grid">
               <div class="chart-card">
                 <h3 class="table-title">👥 用户角色分布</h3>
-                <div id="roleChart" class="chart-container"></div>
+                <div id="roleChart" class="chart-container-sm"></div>
               </div>
               <div class="chart-card">
                 <h3 class="table-title">📂 用户类别分布</h3>
-                <div id="categoryChart" class="chart-container"></div>
+                <div id="categoryChart" class="chart-container-sm"></div>
               </div>
             </div>
-            <div class="chart-card">
+            <div class="chart-card chart-card-full">
               <h3 class="table-title">📍 柜机需求热力图</h3>
               <div id="heatmapChart" class="chart-container"></div>
             </div>
@@ -200,22 +202,65 @@
           
           <!-- 规则配置 -->
           <div v-if="currentView === 'rules'">
-            <div class="table-card">
-              <h3 class="table-title">⚙️ 领取规则设置</h3>
-              <el-form style="margin-top: 20px; max-width: 450px;">
-                <el-form-item label="每日领取次数">
-                  <el-input-number v-model="ruleForm.daily_limit" :min="1" :max="10" style="width: 100%;"></el-input-number>
-                </el-form-item>
-                <el-form-item label="食品类每日限额">
-                  <el-input-number v-model="ruleForm.food_limit" :min="1" :max="10" style="width: 100%;"></el-input-number>
-                </el-form-item>
-                <el-form-item label="饮品每日限额">
-                  <el-input-number v-model="ruleForm.drink_limit" :min="1" :max="10" style="width: 100%;"></el-input-number>
-                </el-form-item>
-                <el-form-item>
-                  <el-button type="primary" @click="saveRules" style="width: 150px;">💾 保存规则</el-button>
-                </el-form-item>
-              </el-form>
+            <div class="rules-container">
+              <div class="rules-card">
+                <div class="rules-header">
+                  <span class="rules-icon">⚙️</span>
+                  <h3>领取规则配置</h3>
+                </div>
+                <p class="rules-desc">设置特殊群体每日领取物资的次数和数量限制</p>
+                
+                <div class="rules-form">
+                  <div class="rule-item">
+                    <div class="rule-label">
+                      <span class="rule-icon">📊</span>
+                      <span>每日领取次数上限</span>
+                    </div>
+                    <div class="rule-control">
+                      <el-input-number v-model="ruleForm.daily_limit" :min="1" :max="10" size="large"></el-input-number>
+                      <span class="rule-unit">次/天</span>
+                    </div>
+                  </div>
+                  
+                  <div class="rule-item">
+                    <div class="rule-label">
+                      <span class="rule-icon">🍚</span>
+                      <span>食品类每日限额</span>
+                    </div>
+                    <div class="rule-control">
+                      <el-input-number v-model="ruleForm.food_limit" :min="1" :max="10" size="large"></el-input-number>
+                      <span class="rule-unit">件/天</span>
+                    </div>
+                  </div>
+                  
+                  <div class="rule-item">
+                    <div class="rule-label">
+                      <span class="rule-icon">🥤</span>
+                      <span>饮品类每日限额</span>
+                    </div>
+                    <div class="rule-control">
+                      <el-input-number v-model="ruleForm.drink_limit" :min="1" :max="10" size="large"></el-input-number>
+                      <span class="rule-unit">件/天</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="rules-actions">
+                  <el-button type="primary" size="large" @click="saveRules">
+                    💾 保存规则
+                  </el-button>
+                </div>
+              </div>
+              
+              <div class="rules-tips">
+                <h4>📋 规则说明</h4>
+                <ul>
+                  <li>每日领取次数：特殊群体每天最多可领取物资的次数</li>
+                  <li>食品类限额：包括大米、食用油、方便面等食品</li>
+                  <li>饮品类限额：包括矿泉水、牛奶、饮料等</li>
+                  <li>规则修改后立即生效，适用于所有特殊群体用户</li>
+                </ul>
+              </div>
             </div>
           </div>
           
@@ -589,4 +634,37 @@ body { font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-seri
 .notification-content { color: #7f8c8d; font-size: 14px; }
 .notification-time { color: #bdc3c7; font-size: 12px; margin-top: 8px; }
 .empty-tip { text-align: center; color: #95a5a6; padding: 40px; }
+
+/* 数据分析页面 */
+.analysis-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+.chart-container-sm { height: 280px; }
+.chart-card-full { margin-top: 24px; }
+
+/* 规则配置页面 */
+.rules-container { display: grid; grid-template-columns: 1fr 350px; gap: 24px; }
+.rules-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: var(--shadow); }
+.rules-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.rules-icon { font-size: 28px; }
+.rules-header h3 { font-size: 22px; font-weight: 700; color: var(--dark); margin: 0; }
+.rules-desc { color: #7f8c8d; font-size: 14px; margin-bottom: 28px; }
+.rules-form { display: flex; flex-direction: column; gap: 24px; }
+.rule-item { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: #f8f9fa; border-radius: 12px; }
+.rule-label { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 600; color: var(--dark); }
+.rule-icon { font-size: 20px; }
+.rule-control { display: flex; align-items: center; gap: 12px; }
+.rule-unit { color: #7f8c8d; font-size: 14px; }
+.rules-actions { margin-top: 32px; display: flex; justify-content: center; }
+.rules-actions .el-button { padding: 12px 40px; font-size: 16px; }
+
+.rules-tips { background: #fff; border-radius: 16px; padding: 24px; box-shadow: var(--shadow); height: fit-content; }
+.rules-tips h4 { font-size: 16px; font-weight: 600; color: var(--dark); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.rules-tips ul { list-style: none; padding: 0; margin: 0; }
+.rules-tips li { padding: 12px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; color: #666; line-height: 1.6; }
+.rules-tips li:last-child { border-bottom: none; }
+.rules-tips li::before { content: '•'; color: var(--primary); font-weight: bold; margin-right: 8px; }
+
+@media (max-width: 1200px) {
+  .analysis-grid { grid-template-columns: 1fr; }
+  .rules-container { grid-template-columns: 1fr; }
+}
 </style>

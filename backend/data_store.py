@@ -429,7 +429,7 @@ class DataStore:
         self._save()
     
     def init_default_data(self):
-        """初始化默认数据"""
+        """初始化默认数据 - 无锡市梁溪区扬名街道"""
         if not self.data.get("users"):
             # 创建默认管理员
             self.create_user({
@@ -437,55 +437,154 @@ class DataStore:
                 "name": "系统管理员",
                 "role": "admin",
                 "category": "管理员",
-                "community": "总部"
+                "community": "扬名街道办事处"
             })
             
-            # 创建测试用户
-            test_users = [
-                {"phone": "13900000001", "name": "张三", "role": "special_group", "category": "残疾人", "community": "朝阳区"},
-                {"phone": "13900000002", "name": "李四", "role": "special_group", "category": "低保户", "community": "海淀区"},
-                {"phone": "13900000003", "name": "王五", "role": "special_group", "category": "残疾人", "community": "东城区"},
-                {"phone": "13900000004", "name": "赵六", "role": "special_group", "category": "老年人", "community": "西城区"},
-                {"phone": "13900000005", "name": "钱七", "role": "special_group", "category": "低保户", "community": "朝阳区"},
-                {"phone": "13700000001", "name": "志愿者小王", "role": "special_group", "category": "志愿者", "community": "朝阳区"},
-                {"phone": "13600000001", "name": "爱心商户A", "role": "merchant", "category": "商户", "community": "朝阳区"},
-                {"phone": "13600000002", "name": "爱心商户B", "role": "merchant", "category": "商户", "community": "海淀区"},
-                {"phone": "13600000003", "name": "爱心商户C", "role": "merchant", "category": "商户", "community": "东城区"},
+            # 扬名街道各社区特殊群体用户
+            special_users = [
+                # 扬名社区
+                {"phone": "18912340001", "name": "陈建国", "role": "special_group", "category": "残疾人", "community": "扬名社区", "daily_limit": 3},
+                {"phone": "18912340002", "name": "李秀英", "role": "special_group", "category": "低保户", "community": "扬名社区", "daily_limit": 3},
+                {"phone": "18912340003", "name": "王阿婆", "role": "special_group", "category": "高龄老人", "community": "扬名社区", "daily_limit": 2},
+                # 五星社区
+                {"phone": "18912340004", "name": "张大明", "role": "special_group", "category": "残疾人", "community": "五星社区", "daily_limit": 3},
+                {"phone": "18912340005", "name": "刘桂芬", "role": "special_group", "category": "低保户", "community": "五星社区", "daily_limit": 3},
+                {"phone": "18912340006", "name": "孙老伯", "role": "special_group", "category": "独居老人", "community": "五星社区", "daily_limit": 2},
+                # 清名桥社区
+                {"phone": "18912340007", "name": "周阿姨", "role": "special_group", "category": "残疾人", "community": "清名桥社区", "daily_limit": 3},
+                {"phone": "18912340008", "name": "吴大爷", "role": "special_group", "category": "低保户", "community": "清名桥社区", "daily_limit": 3},
+                {"phone": "18912340009", "name": "郑奶奶", "role": "special_group", "category": "高龄老人", "community": "清名桥社区", "daily_limit": 2},
+                # 中桥社区
+                {"phone": "18912340010", "name": "赵师傅", "role": "special_group", "category": "残疾人", "community": "中桥社区", "daily_limit": 3},
+                {"phone": "18912340011", "name": "钱大姐", "role": "special_group", "category": "低保户", "community": "中桥社区", "daily_limit": 3},
+                {"phone": "18912340012", "name": "孙婆婆", "role": "special_group", "category": "独居老人", "community": "中桥社区", "daily_limit": 2},
+                # 芦庄社区
+                {"phone": "18912340013", "name": "李大爷", "role": "special_group", "category": "残疾人", "community": "芦庄社区", "daily_limit": 3},
+                {"phone": "18912340014", "name": "王阿姨", "role": "special_group", "category": "低保户", "community": "芦庄社区", "daily_limit": 3},
+                {"phone": "18912340015", "name": "张奶奶", "role": "special_group", "category": "高龄老人", "community": "芦庄社区", "daily_limit": 2},
+                # 翠云社区
+                {"phone": "18912340016", "name": "刘师傅", "role": "special_group", "category": "残疾人", "community": "翠云社区", "daily_limit": 3},
+                {"phone": "18912340017", "name": "陈大姐", "role": "special_group", "category": "低保户", "community": "翠云社区", "daily_limit": 3},
+                {"phone": "18912340018", "name": "周奶奶", "role": "special_group", "category": "独居老人", "community": "翠云社区", "daily_limit": 2},
             ]
-            for u in test_users:
+            for u in special_users:
                 self.create_user(u)
+            
+            # 志愿者
+            volunteers = [
+                {"phone": "18912340020", "name": "徐小明", "role": "special_group", "category": "志愿者", "community": "扬名社区", "daily_limit": 5},
+                {"phone": "18912340021", "name": "林小红", "role": "special_group", "category": "志愿者", "community": "五星社区", "daily_limit": 5},
+                {"phone": "18912340022", "name": "黄志强", "role": "special_group", "category": "志愿者", "community": "清名桥社区", "daily_limit": 5},
+            ]
+            for v in volunteers:
+                self.create_user(v)
+            
+            # 爱心商户 - 扬名街道周边真实商家类型
+            merchants = [
+                {"phone": "18912340030", "name": "家乐福超市(清名路店)", "role": "merchant", "category": "商超", "community": "清名桥社区"},
+                {"phone": "18912340031", "name": "大润发超市(五星店)", "role": "merchant", "category": "商超", "community": "五星社区"},
+                {"phone": "18912340032", "name": "扬名街道爱心面馆", "role": "merchant", "category": "餐饮", "community": "扬名社区"},
+                {"phone": "18912340033", "name": "梁溪区放心粮油店", "role": "merchant", "category": "粮油", "community": "中桥社区"},
+                {"phone": "18912340034", "name": "无锡市食品公司", "role": "merchant", "category": "食品企业", "community": "芦庄社区"},
+                {"phone": "18912340035", "name": "瑞幸咖啡(扬名店)", "role": "merchant", "category": "饮品", "community": "扬名社区"},
+                {"phone": "18912340036", "name": "华润万家(翠云店)", "role": "merchant", "category": "商超", "community": "翠云社区"},
+                {"phone": "18912340037", "name": "本地有机蔬菜合作社", "role": "merchant", "category": "农产品", "community": "五星社区"},
+            ]
+            for m in merchants:
+                self.create_user(m)
         
         if not self.data.get("machines"):
-            # 创建默认柜机
+            # 扬名街道各社区柜机 - 基于实际地理位置
             machines = [
-                {"id": "MC001", "name": "爱心柜-朝阳区政务中心", "location": "北京市朝阳区政务服务中心", "latitude": 39.9288, "longitude": 116.4569, "status": "online", "api_url": "http://localhost:8000/mock"},
-                {"id": "MC002", "name": "爱心柜-海淀区社区中心", "location": "北京市海淀区中关村街道", "latitude": 39.9830, "longitude": 116.3120, "status": "online", "api_url": "http://localhost:8000/mock"},
-                {"id": "MC003", "name": "爱心柜-东城区困难帮扶站", "location": "北京市东城区景山街道", "latitude": 39.9163, "longitude": 116.4100, "status": "offline", "api_url": "http://localhost:8000/mock"},
-                {"id": "MC004", "name": "爱心柜-西城区民政局", "location": "北京市西城区二龙路街道", "latitude": 39.9120, "longitude": 116.3700, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM001", "name": "爱心柜-扬名街道便民服务中心", "location": "无锡市梁溪区扬名街道便民服务中心", "latitude": 31.5652, "longitude": 120.3085, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM002", "name": "爱心柜-扬名社区党群服务中心", "location": "无锡市梁溪区扬名街道扬名社区党群服务中心", "latitude": 31.5621, "longitude": 120.3156, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM003", "name": "爱心柜-五星社区居委会", "location": "无锡市梁溪区扬名街道五星社区居委会", "latitude": 31.5589, "longitude": 120.2998, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM004", "name": "爱心柜-清名桥社区服务中心", "location": "无锡市梁溪区扬名街道清名桥社区服务中心", "latitude": 31.5545, "longitude": 120.3112, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM005", "name": "爱心柜-中桥社区活动中心", "location": "无锡市梁溪区扬名街道中桥社区活动中心", "latitude": 31.5512, "longitude": 120.2956, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM006", "name": "爱心柜-芦庄社区服务站", "location": "无锡市梁溪区扬名街道芦庄社区服务站", "latitude": 31.5478, "longitude": 120.3034, "status": "online", "api_url": "http://localhost:8000/mock"},
+                {"id": "YM007", "name": "爱心柜-翠云社区服务中心", "location": "无锡市梁溪区扬名街道翠云社区服务中心", "latitude": 31.5498, "longitude": 120.3198, "status": "offline", "api_url": "http://localhost:8000/mock"},
             ]
             for m in machines:
                 self.create_machine(m)
         
-        # 创建测试捐赠记录
+        # 创建丰富的捐赠记录
         if not self.data.get("donations"):
-            merchant = self.get_user_by_phone("13600000001")
-            if merchant:
-                self.create_donation({
-                    "merchant_id": merchant["id"],
-                    "machine_id": "MC001",
-                    "item_name": "矿泉水",
-                    "quantity": 10,
-                    "expiry_time": (datetime.utcnow() + timedelta(days=5)).isoformat(),
-                    "status": "active"
-                })
-                self.create_donation({
-                    "merchant_id": merchant["id"],
-                    "machine_id": "MC001",
-                    "item_name": "方便面",
-                    "quantity": 5,
-                    "expiry_time": (datetime.utcnow() + timedelta(days=7)).isoformat(),
-                    "status": "active"
-                })
+            donations_data = [
+                # 家乐福超市捐赠
+                {"merchant_phone": "18912340030", "machine_id": "YM004", "item_name": "大米(5kg装)", "quantity": 20, "expiry_days": 30},
+                {"merchant_phone": "18912340030", "machine_id": "YM004", "item_name": "食用油(1.8L)", "quantity": 15, "expiry_days": 60},
+                {"merchant_phone": "18912340030", "machine_id": "YM001", "item_name": "牛奶(箱装)", "quantity": 10, "expiry_days": 14},
+                # 大润发超市捐赠
+                {"merchant_phone": "18912340031", "machine_id": "YM003", "item_name": "方便面(桶装)", "quantity": 30, "expiry_days": 90},
+                {"merchant_phone": "18912340031", "machine_id": "YM003", "item_name": "火腿肠", "quantity": 50, "expiry_days": 60},
+                {"merchant_phone": "18912340031", "machine_id": "YM002", "item_name": "矿泉水(箱)", "quantity": 20, "expiry_days": 180},
+                # 爱心面馆捐赠
+                {"merchant_phone": "18912340032", "machine_id": "YM002", "item_name": "挂面(1kg装)", "quantity": 25, "expiry_days": 120},
+                {"merchant_phone": "18912340032", "machine_id": "YM001", "item_name": "老干妈酱", "quantity": 30, "expiry_days": 180},
+                # 粮油店捐赠
+                {"merchant_phone": "18912340033", "machine_id": "YM005", "item_name": "面粉(2.5kg)", "quantity": 20, "expiry_days": 90},
+                {"merchant_phone": "18912340033", "machine_id": "YM005", "item_name": "杂粮礼盒", "quantity": 10, "expiry_days": 120},
+                # 食品公司捐赠
+                {"merchant_phone": "18912340034", "machine_id": "YM006", "item_name": "饼干礼盒", "quantity": 15, "expiry_days": 60},
+                {"merchant_phone": "18912340034", "machine_id": "YM006", "item_name": "八宝粥", "quantity": 40, "expiry_days": 180},
+                # 瑞幸咖啡捐赠
+                {"merchant_phone": "18912340035", "machine_id": "YM002", "item_name": "速溶咖啡(盒装)", "quantity": 20, "expiry_days": 365},
+                # 华润万家捐赠
+                {"merchant_phone": "18912340036", "machine_id": "YM007", "item_name": "卫生纸(提)", "quantity": 30, "expiry_days": 365},
+                {"merchant_phone": "18912340036", "machine_id": "YM007", "item_name": "洗衣液(袋装)", "quantity": 20, "expiry_days": 365},
+                # 蔬菜合作社捐赠
+                {"merchant_phone": "18912340037", "machine_id": "YM003", "item_name": "新鲜蔬菜包", "quantity": 15, "expiry_days": 3},
+                {"merchant_phone": "18912340037", "machine_id": "YM001", "item_name": "鸡蛋(盒装30枚)", "quantity": 10, "expiry_days": 14},
+                # 过期商品示例
+                {"merchant_phone": "18912340030", "machine_id": "YM001", "item_name": "面包(袋装)", "quantity": 10, "expiry_days": -1, "status": "expired"},
+            ]
+            for d in donations_data:
+                merchant = self.get_user_by_phone(d["merchant_phone"])
+                if merchant:
+                    status = d.get("status", "active")
+                    expiry_days = d["expiry_days"]
+                    expiry_time = datetime.utcnow() + timedelta(days=expiry_days)
+                    self.create_donation({
+                        "merchant_id": merchant["id"],
+                        "machine_id": d["machine_id"],
+                        "item_name": d["item_name"],
+                        "quantity": d["quantity"],
+                        "expiry_time": expiry_time.isoformat(),
+                        "status": status
+                    })
+        
+        # 创建一些领取记录
+        if not self.data.get("pickups"):
+            pickups_data = [
+                {"user_phone": "18912340001", "machine_id": "YM001", "item_name": "牛奶(箱装)", "quantity": 1},
+                {"user_phone": "18912340002", "machine_id": "YM002", "item_name": "矿泉水(箱)", "quantity": 1},
+                {"user_phone": "18912340004", "machine_id": "YM003", "item_name": "方便面(桶装)", "quantity": 2},
+                {"user_phone": "18912340005", "machine_id": "YM004", "item_name": "大米(5kg装)", "quantity": 1},
+                {"user_phone": "18912340007", "machine_id": "YM005", "item_name": "面粉(2.5kg)", "quantity": 1},
+                {"user_phone": "18912340010", "machine_id": "YM006", "item_name": "八宝粥", "quantity": 3},
+                {"user_phone": "18912340013", "machine_id": "YM001", "item_name": "挂面(1kg装)", "quantity": 2},
+                {"user_phone": "18912340016", "machine_id": "YM003", "item_name": "新鲜蔬菜包", "quantity": 1},
+            ]
+            for p in pickups_data:
+                user = self.get_user_by_phone(p["user_phone"])
+                if user:
+                    self.create_pickup({
+                        "user_id": user["id"],
+                        "machine_id": p["machine_id"],
+                        "item_name": p["item_name"],
+                        "quantity": p["quantity"],
+                        "is_compliant": True
+                    })
+        
+        # 创建系统通知
+        if not self.data.get("notifications"):
+            notifications_data = [
+                {"title": "系统上线通知", "content": "爱心柜公益管理系统已在扬名街道正式上线，欢迎各社区特殊群体和爱心商户使用！", "type": "info"},
+                {"title": "捐赠温馨提示", "content": "感谢各爱心商户的慷慨捐赠，请定期关注捐赠物品的有效期。", "type": "warning"},
+                {"title": "志愿者招募", "content": "扬名街道正在招募爱心志愿者，帮助行动不便的特殊群体代领物资，有意者请联系社区服务中心。", "type": "info"},
+            ]
+            for n in notifications_data:
+                self.create_notification(n)
 
 # 导入 timedelta
 from datetime import timedelta

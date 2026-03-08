@@ -101,12 +101,12 @@
         
         <div v-if="activeTab === 'machines'" class="card">
           <div class="section-title">🏪 选择柜机</div>
-          <div v-for="m in machines" :key="m.id" class="machine-card" @click="openMachine(m)">
+          <div v-for="m in machines" :key="m.id" class="machine-card">
             <div class="machine-info">
               <h3>{{ m.name }}</h3>
               <p>{{ m.location }}</p>
             </div>
-            <button class="btn btn-primary btn-sm">🚪 开门</button>
+            <button class="btn-open-door" @click="openMachine(m)">🚪 开门</button>
           </div>
         </div>
         
@@ -498,7 +498,7 @@ body {
 .input-group input, .input-group select { width: 100%; padding: 14px 16px; border: 2px solid #FFE8E8; border-radius: 12px; font-size: 15px; background: #FFFCFC; }
 .input-group input:focus, .input-group select:focus { outline: none; border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.1); }
 
-.otp-btn { background: var(--primary-light); color: var(--primary); border: 2px solid var(--primary); font-weight: 600; width: auto; padding: 14px 16px; white-space: nowrap; flex-shrink: 0; }
+.otp-btn { background: var(--primary-light); color: var(--primary); border: 2px solid var(--primary); font-weight: 600; width: auto; min-width: 110px; padding: 14px 16px; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; text-align: center; }
 .otp-row { display: flex; gap: 10px; align-items: center; }
 .otp-input { flex: 1; min-width: 0; padding: 14px 16px; border: 2px solid #FFE8E8; border-radius: 12px; font-size: 15px; background: #FFFCFC; }
 .otp-input:focus { outline: none; border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.1); }
@@ -517,10 +517,37 @@ body {
 .tab { flex: 1; text-align: center; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; color: #7F8C8D; transition: all 0.3s; }
 .tab.active { background: #fff; color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
-.machine-card { background: #fff; border-radius: 16px; padding: 18px; margin: 10px 16px; box-shadow: var(--shadow); display: flex; justify-content: space-between; align-items: center; transition: all 0.3s; border: 2px solid transparent; }
+.machine-card { 
+  background: #fff; 
+  border-radius: 16px; 
+  padding: 18px; 
+  margin: 10px 0; 
+  box-shadow: var(--shadow); 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  transition: all 0.3s; 
+  border: 2px solid transparent;
+  gap: 16px;
+}
 .machine-card:hover { border-color: var(--primary); transform: translateX(4px); }
-.machine-info h3 { font-size: 16px; margin-bottom: 6px; color: var(--dark); }
-.machine-info p { font-size: 13px; color: #95A5A6; }
+.machine-info { flex: 1; min-width: 0; }
+.machine-info h3 { font-size: 15px; margin-bottom: 6px; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.machine-info p { font-size: 12px; color: #95A5A6; line-height: 1.4; }
+.btn-open-door {
+  background: var(--gradient);
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.btn-open-door:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3); }
 .machine-status { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 .machine-status.online { background: #27AE60; box-shadow: 0 0 8px #27AE60; }
 .machine-status.offline { background: #E74C3C; }
