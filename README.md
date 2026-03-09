@@ -53,6 +53,26 @@ cd frontend
 npm install
 ```
 
+### 1.1 配置高德地图 Key
+
+用户端现在支持在 APP 中直接查看柜机的高德地图位置。
+
+1. 进入 frontend 目录
+2. 复制 frontend/.env.example 为 frontend/.env
+3. 填入你自己的高德 Web JS API Key 和安全密钥
+
+```bash
+cd frontend
+cp .env.example .env
+```
+
+```env
+VITE_AMAP_KEY=你的高德Web端Key
+VITE_AMAP_SECURITY_CODE=你的高德安全密钥
+```
+
+如果没有配置这两个变量，APP 不会报错，但内嵌地图会自动退化为提示信息和高德外链打开方式。
+
 ### 2. 启动后端服务
 
 ```bash
@@ -75,6 +95,12 @@ npm run dev
 
 - **用户端**: http://localhost:3000/
 - **管理后台**: http://localhost:3000/admin/
+
+### 用户端地图能力
+
+- 登录前“附近柜机”支持直接查看柜机地图位置
+- 特殊群体“选择柜机”支持地图弹层查看具体位置
+- 商户“新增投放”在选中柜机后可直接查看该柜机地图位置
 
 ## 测试账号
 

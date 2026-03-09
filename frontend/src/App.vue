@@ -1,50 +1,86 @@
 <template>
   <div class="app-container">
     <!-- 登录页 -->
-    <div v-if="!isLoggedIn">
+    <div v-if="!isLoggedIn" class="page-shell login-shell">
       <div class="header">
         <h1><span class="heart-icon">❤️</span> 爱心柜</h1>
         <p>为爱续航，让温暖传递</p>
       </div>
-      
-      <div class="card">
-        <div class="input-group">
-          <label>📱 手机号</label>
-          <input type="tel" v-model="loginForm.phone" placeholder="请输入手机号" maxlength="11">
-        </div>
-        
-        <div class="input-group">
-          <label>🔐 验证码</label>
-          <div class="otp-row">
-            <input type="text" v-model="loginForm.otp" placeholder="请输入验证码" class="otp-input">
-            <button @click="requestOtp" :disabled="otpCountdown > 0" class="btn otp-btn">
-              {{ otpCountdown > 0 ? otpCountdown + 's' : '获取验证码' }}
-            </button>
+
+      <div class="page-body login-body">
+        <div class="card">
+          <div class="input-group">
+            <label>📱 手机号</label>
+            <input type="tel" v-model="loginForm.phone" placeholder="请输入手机号" maxlength="11">
           </div>
-        </div>
-        
-        <button class="btn btn-primary" @click="login">🚀 立即登录</button>
-        
-        <p class="tip">测试验证码: <strong>123456</strong></p>
-      </div>
-      
-      <div class="card">
-        <div class="section-title">📍 附近柜机</div>
-        <div v-for="m in machines" :key="m.id" class="machine-card" @click="selectMachine(m)">
-          <div class="machine-info">
-            <h3>🏪 {{ m.name }}</h3>
-            <p>{{ m.location }}</p>
+
+          <div class="input-group">
+            <label>🔐 验证码</label>
+            <div class="otp-row">
+              <input type="text" v-model="loginForm.otp" placeholder="请输入验证码" class="otp-input">
+              <button @click="requestOtp" :disabled="otpCountdown > 0" class="btn otp-btn">
+                {{ otpCountdown > 0 ? otpCountdown + 's' : '获取验证码' }}
+              </button>
+            </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="machine-status" :class="m.status"></span>
-            <span class="status-text">{{ m.status === 'online' ? '在线' : '离线' }}</span>
+
+          <button class="btn btn-primary" @click="login">🚀 立即登录</button>
+
+          <p class="tip">测试验证码: <strong>123456</strong></p>
+        </div>
+
+        <div class="card card-scroll card-soft">
+          <div class="section-header">
+            <div class="section-title section-title-tight">📍 附近柜机</div>
+            <div class="view-switch">
+              <button :class="['view-switch-btn', nearbyView === 'list' ? 'active' : '']" @click="nearbyView = 'list'">列表</button>
+              <button :class="['view-switch-btn', nearbyView === 'map' ? 'active' : '']" @click="nearbyView = 'map'">地图</button>
+            </div>
+          </div>
+
+          <div v-if="nearbyView === 'list'" class="machine-list">
+            <div v-for="m in machines" :key="m.id" class="machine-card machine-card-sm" @click="selectMachine(m)">
+              <div class="machine-info">
+                <h3>🏪 {{ m.name }}</h3>
+                <p>{{ m.location }}</p>
+                <div class="machine-meta" v-if="hasMachineCoordinates(m)">
+                  <span class="location-pill">高德地图可查看</span>
+                </div>
+              </div>
+              <div class="machine-side-panel">
+                <button class="btn-ghost-action" @click.stop="viewMachineMap(m)">地图</button>
+                <span class="machine-status" :class="m.status"></span>
+                <span class="status-text">{{ m.status === 'online' ? '在线' : '离线' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="nearby-map-panel">
+            <div class="nearby-map-shell">
+              <div ref="nearbyMapContainer" class="nearby-map-container" :class="{ 'map-container-hidden': !!nearbyMapError }"></div>
+              <div v-if="nearbyMapLoading" class="map-state map-state-overlay">附近柜机地图加载中...</div>
+              <div v-else-if="nearbyMapError" class="map-state map-state-error map-state-overlay">
+                <p>{{ nearbyMapError }}</p>
+              </div>
+            </div>
+            <div class="nearby-map-tip">点击地图标点可查看柜机信息，点击下方卡片可打开完整地图弹层。</div>
+            <div class="nearby-machine-strip">
+              <button
+                v-for="m in mappableMachines"
+                :key="m.id"
+                class="nearby-machine-pill"
+                @click="viewMachineMap(m)"
+              >
+                {{ m.id }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
-    
+
     <!-- 用户首页 -->
-    <div v-else>
+    <div v-else class="page-shell auth-shell">
       <div class="header">
         <h1><span class="heart-icon">❤️</span> 爱心柜</h1>
         <p>欢迎回来, {{ userInfo.name }}</p>
@@ -53,9 +89,10 @@
           <span>{{ roleText }}</span>
         </div>
       </div>
-      
+
+      <div class="page-body auth-body">
       <!-- 特殊群体界面 -->
-      <div v-if="userInfo.role === 'special_group'">
+      <div v-if="userInfo.role === 'special_group'" class="content-stack">
         <div class="card card-stats">
           <div class="stats-grid">
             <div class="stat-item">
@@ -84,33 +121,52 @@
           <div :class="['tab', activeTab === 'pickups' ? 'active' : '']" @click="activeTab = 'pickups'">📝 我的领取</div>
           <div :class="['tab', activeTab === 'machines' ? 'active' : '']" @click="activeTab = 'machines'">🏪 领取物资</div>
         </div>
-        
-        <div v-if="activeTab === 'pickups'" class="card">
+
+        <div v-if="activeTab === 'pickups'" class="card card-scroll list-card">
           <div class="section-title">📋 领取记录</div>
-          <div v-for="p in myPickups" :key="p.id" class="list-item">
-            <div>
-              <div class="item-name">{{ p.item_name }}</div>
-              <div class="item-time">{{ formatDate(p.pickup_time) }}</div>
+          <div class="content-scroll-list">
+            <div v-for="p in myPickups" :key="p.id" class="list-item">
+              <div>
+                <div class="item-name">{{ p.item_name }}</div>
+                <div class="item-time">{{ formatDate(p.pickup_time) }}</div>
+              </div>
+              <span :class="['status-tag', p.is_compliant ? 'status-active' : 'status-expired']">
+                {{ p.is_compliant ? '✅ 合规' : '⚠️ 违规' }}
+              </span>
             </div>
-            <span :class="['status-tag', p.is_compliant ? 'status-active' : 'status-expired']">
-              {{ p.is_compliant ? '✅ 合规' : '⚠️ 违规' }}
-            </span>
+            <p v-if="myPickups.length === 0" class="empty-tip">暂无领取记录</p>
           </div>
-          <p v-if="myPickups.length === 0" class="empty-tip">暂无领取记录</p>
         </div>
-        
-        <div v-if="activeTab === 'machines'" class="card">
+
+        <div v-if="activeTab === 'machines'" class="card card-scroll card-soft">
           <div class="section-title">🏪 选择柜机</div>
-          <div v-for="m in machines" :key="m.id" class="machine-card">
-            <div class="machine-info">
-              <h3>{{ m.name }}</h3>
-              <p>{{ m.location }}</p>
+          <div class="search-box">
+            <input
+              v-model="machineSearch"
+              type="text"
+              placeholder="搜索柜机名称、位置或编号"
+              class="search-input"
+            >
+          </div>
+          <div class="machine-list">
+            <div v-for="m in filteredMachines" :key="m.id" class="machine-card machine-card-sm">
+              <div class="machine-info">
+                <h3>{{ m.name }}</h3>
+                <p>{{ m.location }}</p>
+                <div class="machine-meta" v-if="hasMachineCoordinates(m)">
+                  <span class="location-pill">{{ machineCoordinateText(m) }}</span>
+                </div>
+              </div>
+              <div class="machine-actions">
+                <button class="btn-map" @click="viewMachineMap(m)">🗺️ 地图</button>
+                <button class="btn-open-door" @click="openMachine(m)">🚪 开门</button>
+              </div>
             </div>
-            <button class="btn-open-door" @click="openMachine(m)">🚪 开门</button>
+            <p v-if="filteredMachines.length === 0" class="empty-tip empty-tip-compact">未找到匹配的柜机</p>
           </div>
         </div>
-        
-        <div class="card">
+
+        <div class="card compact-card">
           <div class="section-title">🤝 志愿者代领</div>
           <div v-if="!userInfo.volunteer_phone">
             <div class="input-group">
@@ -127,9 +183,9 @@
           </div>
         </div>
       </div>
-      
+
       <!-- 商户界面 -->
-      <div v-else-if="userInfo.role === 'merchant'">
+      <div v-else-if="userInfo.role === 'merchant'" class="content-stack">
         <div class="quick-actions">
           <div class="quick-action" @click="activeTab = 'new'" style="background: var(--gradient-blue);">
             <div class="quick-action-icon">➕</div>
@@ -140,65 +196,81 @@
             <div class="quick-action-label">我的投放</div>
           </div>
         </div>
-        
-        <div v-if="activeTab === 'donations'" class="card">
+
+        <div v-if="activeTab === 'donations'" class="card card-scroll list-card">
           <div class="section-title">🎁 投放记录</div>
-          <div v-for="d in myDonations" :key="d.id" class="list-item">
-            <div>
-              <div class="item-name">{{ d.item_name }}</div>
-              <div class="item-time">数量: {{ d.quantity }} | 截止: {{ formatDate(d.expiry_time) }}</div>
+          <div class="content-scroll-list">
+            <div v-for="d in myDonations" :key="d.id" class="list-item">
+              <div>
+                <div class="item-name">{{ d.item_name }}</div>
+                <div class="item-time">数量: {{ d.quantity }} | 截止: {{ formatDate(d.expiry_time) }}</div>
+              </div>
+              <span :class="['status-tag', 
+                d.status === 'active' ? 'status-active' : 
+                d.status === 'expired' ? 'status-expired' : 'status-pending']">
+                {{ donationStatusText(d.status) }}
+              </span>
             </div>
-            <span :class="['status-tag', 
-              d.status === 'active' ? 'status-active' : 
-              d.status === 'expired' ? 'status-expired' : 'status-pending']">
-              {{ donationStatusText(d.status) }}
-            </span>
+            <p v-if="myDonations.length === 0" class="empty-tip">暂无投放记录</p>
           </div>
-          <p v-if="myDonations.length === 0" class="empty-tip">暂无投放记录</p>
         </div>
-        
-        <div v-if="activeTab === 'new'" class="card">
+
+        <div v-if="activeTab === 'new'" class="card card-scroll form-card">
           <div class="section-title">➕ 新增投放</div>
-          
-          <div class="input-group">
-            <label>选择柜机</label>
-            <select v-model="donationForm.machine_id">
-              <option value="">请选择柜机</option>
-              <option v-for="m in machines" :key="m.id" :value="m.id">{{ m.name }}</option>
-            </select>
+
+          <div class="content-scroll-list">
+            <div class="input-group">
+              <label>选择柜机</label>
+              <select v-model="donationForm.machine_id">
+                <option value="">请选择柜机</option>
+                <option v-for="m in machines" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+            </div>
+
+            <div class="input-group">
+              <label>商品名称</label>
+              <input type="text" v-model="donationForm.item_name" placeholder="请输入商品名称">
+            </div>
+
+            <div class="input-group">
+              <label>商品数量</label>
+              <input type="number" v-model="donationForm.quantity" placeholder="请输入数量">
+            </div>
+
+            <div class="input-group">
+              <label>领用截止天数</label>
+              <input type="number" v-model="donationForm.expiry_days" placeholder="默认7天" value="7">
+            </div>
+
+            <div v-if="selectedDonationMachine" class="machine-preview-card">
+              <div class="machine-preview-copy">
+                <div class="machine-preview-label">当前柜机位置</div>
+                <div class="machine-preview-name">{{ selectedDonationMachine.name }}</div>
+                <div class="machine-preview-location">{{ selectedDonationMachine.location }}</div>
+              </div>
+              <button class="btn-map" @click="viewMachineMap(selectedDonationMachine)">🗺️ 查看地图</button>
+            </div>
+
+            <button class="btn btn-success" @click="createDonation">✨ 确认投放</button>
           </div>
-          
-          <div class="input-group">
-            <label>商品名称</label>
-            <input type="text" v-model="donationForm.item_name" placeholder="请输入商品名称">
-          </div>
-          
-          <div class="input-group">
-            <label>商品数量</label>
-            <input type="number" v-model="donationForm.quantity" placeholder="请输入数量">
-          </div>
-          
-          <div class="input-group">
-            <label>领用截止天数</label>
-            <input type="number" v-model="donationForm.expiry_days" placeholder="默认7天" value="7">
-          </div>
-          
-          <button class="btn btn-success" @click="createDonation">✨ 确认投放</button>
         </div>
       </div>
-      
-      <div v-else class="card">
-        <div class="empty-state">
-          <div class="empty-icon">🔒</div>
-          <p>请联系管理员分配角色</p>
+
+      <div v-else class="content-stack">
+        <div class="card">
+          <div class="empty-state">
+            <div class="empty-icon">🔒</div>
+            <p>请联系管理员分配角色</p>
+          </div>
         </div>
       </div>
-      
+
       <div class="footer">
         <button class="btn btn-outline" @click="logout">🚪 退出登录</button>
       </div>
+      </div>
     </div>
-    
+
     <!-- 开门确认弹窗 -->
     <div v-if="showOpenModal" class="modal-overlay" @click.self="showOpenModal = false">
       <div class="modal">
@@ -211,6 +283,41 @@
         <button class="btn btn-outline" @click="showOpenModal = false">取消</button>
       </div>
     </div>
+
+    <div v-if="showMapModal" class="modal-overlay modal-overlay-map" @click.self="closeMapModal">
+      <div class="modal modal-map">
+        <div class="map-modal-header">
+          <div>
+            <div class="map-modal-kicker">高德地图定位</div>
+            <h3>{{ mapMachine?.name || '柜机位置' }}</h3>
+          </div>
+          <button class="modal-close" @click="closeMapModal">×</button>
+        </div>
+
+        <p class="map-address">{{ mapMachine?.location || '暂无地址信息' }}</p>
+
+        <div class="map-shell">
+          <div ref="mapContainer" class="map-container" :class="{ 'map-container-hidden': !!mapError }"></div>
+          <div v-if="mapLoading" class="map-state map-state-overlay">地图加载中...</div>
+          <div v-else-if="mapError" class="map-state map-state-error map-state-overlay">
+            <p>{{ mapError }}</p>
+            <a v-if="mapExternalUrl" :href="mapExternalUrl" target="_blank" rel="noopener noreferrer" class="map-link-btn">在高德地图打开</a>
+          </div>
+        </div>
+
+        <div class="map-footer">
+          <div class="map-tip">{{ mapFooterText }}</div>
+          <div class="map-link-actions">
+            <div class="map-copy-actions">
+              <button class="map-copy-btn" @click="copyMachineAddress">复制地址</button>
+              <button class="map-copy-btn" @click="copyMachineCoordinates">复制经纬度</button>
+            </div>
+            <a v-if="mapNavigationUrl" :href="mapNavigationUrl" target="_blank" rel="noopener noreferrer" class="map-link-btn map-link-nav">导航到这里</a>
+            <a v-if="mapWalkingUrl" :href="mapWalkingUrl" target="_blank" rel="noopener noreferrer" class="map-link-text">步行路线外链</a>
+          </div>
+        </div>
+      </div>
+    </div>
     
     <!-- 消息提示 -->
     <div v-if="message" class="message-toast">{{ message }}</div>
@@ -218,10 +325,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 
 const API_BASE = '/api'
+const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || ''
+const AMAP_SECURITY_CODE = import.meta.env.VITE_AMAP_SECURITY_CODE || ''
 
 // 状态
 const isLoggedIn = ref(false)
@@ -234,24 +343,391 @@ const message = ref('')
 const loginForm = ref({ phone: '', otp: '' })
 const volunteerPhone = ref('')
 const donationForm = ref({ machine_id: '', item_name: '', quantity: 1, expiry_days: 7 })
+const machineSearch = ref('')
 const machines = ref([])
 const myPickups = ref([])
 const myDonations = ref([])
+const nearbyView = ref('list')
 
 // UI状态
 const otpCountdown = ref(0)
 const showOpenModal = ref(false)
 const selectedMachine = ref(null)
 const opening = ref(false)
+const showMapModal = ref(false)
+const mapMachine = ref(null)
+const mapLoading = ref(false)
+const mapError = ref('')
+const mapContainer = ref(null)
+const nearbyMapContainer = ref(null)
+const nearbyMapLoading = ref(false)
+const nearbyMapError = ref('')
+
+let amapLoaderPromise = null
+let amapInstance = null
+let nearbyMapInstance = null
+let nearbyClusterInstance = null
 
 const roleText = computed(() => {
   const map = { special_group: '特殊群体', merchant: '爱心商户' }
   return map[userInfo.value?.role] || '用户'
 })
 
+const filteredMachines = computed(() => {
+  const keyword = machineSearch.value.trim().toLowerCase()
+
+  if (!keyword) {
+    return machines.value
+  }
+
+  return machines.value.filter((machine) => {
+    const fields = [machine.id, machine.name, machine.location]
+    return fields.some((field) => String(field || '').toLowerCase().includes(keyword))
+  })
+})
+
+const selectedDonationMachine = computed(() => {
+  return machines.value.find((machine) => String(machine.id) === String(donationForm.value.machine_id)) || null
+})
+
+const mappableMachines = computed(() => machines.value.filter((machine) => hasMachineCoordinates(machine)))
+
+const mapExternalUrl = computed(() => {
+  const machine = mapMachine.value
+
+  if (!hasMachineCoordinates(machine)) {
+    return ''
+  }
+
+  const name = encodeURIComponent(machine.name || '爱心柜')
+  const address = encodeURIComponent(machine.location || '')
+  return `https://uri.amap.com/marker?position=${machine.longitude},${machine.latitude}&name=${name}&src=LoveCabinet&coordinate=gaode&callnative=0&address=${address}`
+})
+
+const mapNavigationUrl = computed(() => {
+  const machine = mapMachine.value
+
+  if (!hasMachineCoordinates(machine)) {
+    return ''
+  }
+
+  const name = encodeURIComponent(machine.name || '爱心柜')
+  return `https://uri.amap.com/navigation?to=${machine.longitude},${machine.latitude},${name}&mode=car&policy=1&src=LoveCabinet&coordinate=gaode&callnative=0`
+})
+
+const mapWalkingUrl = computed(() => {
+  const machine = mapMachine.value
+
+  if (!hasMachineCoordinates(machine)) {
+    return ''
+  }
+
+  const name = encodeURIComponent(machine.name || '爱心柜')
+  return `https://uri.amap.com/navigation?to=${machine.longitude},${machine.latitude},${name}&mode=walk&policy=1&src=LoveCabinet&coordinate=gaode&callnative=0`
+})
+
+const mapFooterText = computed(() => {
+  if (mapError.value) {
+    return '当前已切换到兜底模式，你仍然可以通过高德外链查看定位。'
+  }
+
+  return hasMachineCoordinates(mapMachine.value)
+    ? `经纬度 ${machineCoordinateText(mapMachine.value)}`
+    : '当前柜机缺少经纬度信息。'
+})
+
+const machineCoordinateCopyText = computed(() => {
+  return hasMachineCoordinates(mapMachine.value)
+    ? `${Number(mapMachine.value.latitude)},${Number(mapMachine.value.longitude)}`
+    : ''
+})
+
 const donationStatusText = (status) => {
   const map = { active: '进行中', expired: '已过期', all_claimed: '已领完' }
   return map[status] || status
+}
+
+const hasMachineCoordinates = (machine) => {
+  return Number.isFinite(Number(machine?.latitude)) && Number.isFinite(Number(machine?.longitude))
+}
+
+const machineCoordinateText = (machine) => {
+  if (!hasMachineCoordinates(machine)) {
+    return '暂无坐标'
+  }
+
+  return `${Number(machine.latitude).toFixed(4)}, ${Number(machine.longitude).toFixed(4)}`
+}
+
+const escapeHtml = (text) => {
+  return String(text || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+const destroyMapInstance = () => {
+  if (amapInstance) {
+    amapInstance.destroy()
+    amapInstance = null
+  }
+}
+
+const destroyNearbyMapInstance = () => {
+  if (nearbyClusterInstance && typeof nearbyClusterInstance.setMap === 'function') {
+    nearbyClusterInstance.setMap(null)
+    nearbyClusterInstance = null
+  }
+
+  if (nearbyMapInstance) {
+    nearbyMapInstance.destroy()
+    nearbyMapInstance = null
+  }
+}
+
+const ensureAmapPlugins = async (AMap, plugins) => {
+  await new Promise((resolve) => {
+    AMap.plugin(plugins, resolve)
+  })
+}
+
+const copyText = async (text, successMessage) => {
+  if (!text) {
+    showMessage('暂无可复制内容')
+    return
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textArea = document.createElement('textarea')
+      textArea.value = text
+      textArea.style.position = 'fixed'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+    }
+    showMessage(successMessage)
+  } catch (error) {
+    console.error(error)
+    showMessage('复制失败，请手动复制')
+  }
+}
+
+const copyMachineAddress = () => {
+  copyText(mapMachine.value?.location || '', '地址已复制')
+}
+
+const copyMachineCoordinates = () => {
+  copyText(machineCoordinateCopyText.value, '经纬度已复制')
+}
+
+const ensureAmapLoaded = async () => {
+  if (window.AMap) {
+    return window.AMap
+  }
+
+  if (!AMAP_KEY) {
+    throw new Error('missing-amap-key')
+  }
+
+  if (AMAP_SECURITY_CODE && !window._AMapSecurityConfig) {
+    window._AMapSecurityConfig = {
+      securityJsCode: AMAP_SECURITY_CODE
+    }
+  }
+
+  if (!amapLoaderPromise) {
+    amapLoaderPromise = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector('script[data-amap-sdk="true"]')
+
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(window.AMap), { once: true })
+        existingScript.addEventListener('error', () => reject(new Error('amap-load-failed')), { once: true })
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`
+      script.async = true
+      script.defer = true
+      script.dataset.amapSdk = 'true'
+      script.onload = () => resolve(window.AMap)
+      script.onerror = () => reject(new Error('amap-load-failed'))
+      document.head.appendChild(script)
+    })
+  }
+
+  return amapLoaderPromise
+}
+
+const renderMap = async (machine) => {
+  mapError.value = ''
+
+  if (!hasMachineCoordinates(machine)) {
+    mapError.value = '当前柜机暂无坐标信息，无法渲染地图。'
+    return
+  }
+
+  mapLoading.value = true
+
+  try {
+    const AMap = await ensureAmapLoaded()
+    await ensureAmapPlugins(AMap, ['AMap.MarkerCluster'])
+    await nextTick()
+
+    if (!mapContainer.value) {
+      mapError.value = '地图容器未就绪，请重试。'
+      return
+    }
+
+    destroyMapInstance()
+
+    const position = [Number(machine.longitude), Number(machine.latitude)]
+    amapInstance = new AMap.Map(mapContainer.value, {
+      zoom: 15,
+      center: position,
+      resizeEnable: true,
+      viewMode: '2D',
+      mapStyle: 'amap://styles/whitesmoke'
+    })
+
+    const marker = new AMap.Marker({
+      position,
+      title: machine.name,
+      anchor: 'bottom-center'
+    })
+
+    amapInstance.add(marker)
+    amapInstance.setFitView([marker], false, [48, 48, 48, 48])
+  amapInstance.resize()
+
+    const infoWindow = new AMap.InfoWindow({
+      offset: new AMap.Pixel(0, -28),
+      content: `
+        <div style="min-width: 170px; padding: 4px 2px; color: #2c3e50;">
+          <div style="font-weight: 700; margin-bottom: 6px;">${escapeHtml(machine.name)}</div>
+          <div style="font-size: 12px; line-height: 1.6; color: #6b7280;">${escapeHtml(machine.location)}</div>
+        </div>
+      `
+    })
+
+    infoWindow.open(amapInstance, position)
+  } catch (error) {
+    console.error(error)
+    destroyMapInstance()
+    if (error.message === 'missing-amap-key') {
+      mapError.value = '尚未配置高德地图 Key，当前无法加载内嵌地图。'
+    } else {
+      mapError.value = '高德地图加载失败，请稍后重试或改用外部地图打开。'
+    }
+  } finally {
+    mapLoading.value = false
+  }
+}
+
+const renderNearbyMap = async () => {
+  nearbyMapError.value = ''
+
+  if (!mappableMachines.value.length) {
+    nearbyMapError.value = '当前没有可展示坐标的柜机。'
+    destroyNearbyMapInstance()
+    return
+  }
+
+  nearbyMapLoading.value = true
+
+  try {
+    const AMap = await ensureAmapLoaded()
+    await nextTick()
+
+    if (!nearbyMapContainer.value) {
+      nearbyMapError.value = '附近柜机地图容器未就绪，请稍后再试。'
+      return
+    }
+
+    destroyNearbyMapInstance()
+
+    const firstMachine = mappableMachines.value[0]
+    nearbyMapInstance = new AMap.Map(nearbyMapContainer.value, {
+      zoom: 13,
+      center: [Number(firstMachine.longitude), Number(firstMachine.latitude)],
+      resizeEnable: true,
+      viewMode: '2D',
+      mapStyle: 'amap://styles/whitesmoke'
+    })
+
+    const infoWindow = new AMap.InfoWindow({
+      offset: new AMap.Pixel(0, -28)
+    })
+
+    const markers = mappableMachines.value.map((machine) => {
+      const marker = new AMap.Marker({
+        position: [Number(machine.longitude), Number(machine.latitude)],
+        title: machine.name,
+        anchor: 'bottom-center'
+      })
+
+      marker.on('click', () => {
+        infoWindow.setContent(`
+          <div style="min-width: 170px; padding: 4px 2px; color: #2c3e50;">
+            <div style="font-weight: 700; margin-bottom: 6px;">${escapeHtml(machine.name)}</div>
+            <div style="font-size: 12px; line-height: 1.6; color: #6b7280; margin-bottom: 8px;">${escapeHtml(machine.location)}</div>
+            <div style="font-size: 12px; color: #0f766e;">点击下方卡片查看详情地图</div>
+          </div>
+        `)
+        infoWindow.open(nearbyMapInstance, marker.getPosition())
+      })
+
+      return marker
+    })
+
+    nearbyClusterInstance = new AMap.MarkerCluster(nearbyMapInstance, markers, {
+      gridSize: 64,
+      maxZoom: 16,
+      averageCenter: true,
+      renderClusterMarker(context) {
+        const count = context.count
+        const div = document.createElement('div')
+        div.className = 'nearby-cluster-marker'
+        div.innerHTML = `<span>${count}</span>`
+        context.marker.setContent(div)
+        context.marker.setOffset(new AMap.Pixel(-22, -22))
+      }
+    })
+
+    nearbyMapInstance.setFitView(markers, false, [36, 36, 36, 36])
+    nearbyMapInstance.resize()
+  } catch (error) {
+    console.error(error)
+    destroyNearbyMapInstance()
+    nearbyMapError.value = error.message === 'missing-amap-key'
+      ? '尚未配置高德地图 Key，无法展示附近柜机地图。'
+      : '附近柜机地图加载失败，请稍后重试。'
+  } finally {
+    nearbyMapLoading.value = false
+  }
+}
+
+const viewMachineMap = async (machine) => {
+  mapMachine.value = machine
+  showMapModal.value = true
+  await nextTick()
+  await renderMap(machine)
+}
+
+const closeMapModal = () => {
+  showMapModal.value = false
+}
+
+const selectMachine = (machine) => {
+  viewMachineMap(machine)
 }
 
 const showMessage = (msg) => {
@@ -311,6 +787,9 @@ const logout = () => {
   isLoggedIn.value = false
   userInfo.value = null
   token.value = ''
+  machineSearch.value = ''
+  nearbyView.value = 'list'
+  closeMapModal()
   localStorage.removeItem('token')
   localStorage.removeItem('userInfo')
   activeTab.value = 'machines'
@@ -427,6 +906,33 @@ onMounted(() => {
     }
   }
 })
+
+watch(showMapModal, (visible) => {
+  if (!visible) {
+    destroyMapInstance()
+    mapMachine.value = null
+    mapLoading.value = false
+    mapError.value = ''
+  }
+})
+
+watch([nearbyView, machines, isLoggedIn], async ([view, machineList, loggedIn]) => {
+  if (view !== 'map' || loggedIn || !machineList.length) {
+    if (view !== 'map' || loggedIn) {
+      destroyNearbyMapInstance()
+      nearbyMapLoading.value = false
+      nearbyMapError.value = ''
+    }
+    return
+  }
+
+  await renderNearbyMap()
+})
+
+onBeforeUnmount(() => {
+  destroyMapInstance()
+  destroyNearbyMapInstance()
+})
 </script>
 
 <style>
@@ -445,6 +951,11 @@ onMounted(() => {
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+html, body, #app {
+  height: 100%;
+  overflow: hidden;
+}
+
 body { 
   font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif; 
   background: linear-gradient(180deg, #FFF5F5 0%, #F8F9FA 100%);
@@ -454,17 +965,39 @@ body {
 .app-container { 
   max-width: 480px; 
   margin: 0 auto; 
-  min-height: 100vh; 
+  height: 100vh;
+  max-height: 100vh;
   background: #fff;
   box-shadow: 0 0 40px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-x: hidden;
+  position: relative;
+}
+
+@supports (height: 100dvh) {
+  .app-container {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+.page-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .header { 
   background: var(--gradient); 
   color: #fff; 
-  padding: 32px 24px; 
+  padding: 24px 20px 20px; 
   text-align: center;
   position: relative;
+  flex-shrink: 0;
 }
 
 .header::before {
@@ -477,15 +1010,51 @@ body {
   background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 70%);
 }
 
-.header h1 { font-size: 28px; margin-bottom: 8px; font-weight: 700; position: relative; }
+.header h1 { font-size: 26px; margin-bottom: 6px; font-weight: 700; position: relative; }
 .header p { font-size: 14px; opacity: 0.95; position: relative; }
 
 .heart-icon { display: inline-block; animation: heartbeat 1.5s ease-in-out infinite; }
 @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
 
-.card { background: #fff; border-radius: 20px; padding: 20px; margin: 16px; box-shadow: var(--shadow); }
+.page-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
 
-.btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+.login-body > .card,
+.login-body > .card-scroll {
+  min-height: 0;
+}
+
+.content-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.card { background: #fff; border-radius: 18px; padding: 14px; margin: 0; box-shadow: var(--shadow); }
+.card-soft { background: linear-gradient(180deg, #ffffff 0%, #fffaf9 100%); border: 1px solid rgba(255, 107, 107, 0.08); }
+.card-scroll { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.list-card,
+.form-card,
+.login-body .card-scroll { flex: 1; }
+.compact-card { padding: 12px 14px; }
+.content-scroll-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.machine-list { flex: 1; overflow-y: auto; min-height: 0; padding-right: 4px; }
+.content-scroll-list::-webkit-scrollbar,
+.machine-list::-webkit-scrollbar { width: 4px; }
+.content-scroll-list::-webkit-scrollbar-thumb,
+.machine-list::-webkit-scrollbar-thumb { background: var(--primary-light); border-radius: 4px; }
+
+.btn { width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
 .btn-primary { background: var(--gradient); color: #fff; box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3); }
 .btn-primary:hover { box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4); }
 .btn-success { background: var(--gradient-blue); color: #fff; box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3); }
@@ -493,17 +1062,55 @@ body {
 .btn-sm { width: auto; padding: 10px 20px; font-size: 14px; }
 .btn:active { transform: scale(0.98); }
 
-.input-group { margin-bottom: 18px; }
-.input-group label { display: block; margin-bottom: 10px; color: var(--dark); font-weight: 600; font-size: 14px; }
-.input-group input, .input-group select { width: 100%; padding: 14px 16px; border: 2px solid #FFE8E8; border-radius: 12px; font-size: 15px; background: #FFFCFC; }
+.input-group { margin-bottom: 14px; }
+.input-group label { display: block; margin-bottom: 8px; color: var(--dark); font-weight: 600; font-size: 13px; }
+.input-group input, .input-group select { width: 100%; padding: 12px 14px; border: 2px solid #FFE8E8; border-radius: 12px; font-size: 14px; background: #FFFCFC; }
 .input-group input:focus, .input-group select:focus { outline: none; border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.1); }
 
-.otp-btn { background: var(--primary-light); color: var(--primary); border: 2px solid var(--primary); font-weight: 600; width: auto; min-width: 110px; padding: 14px 16px; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; text-align: center; }
-.otp-row { display: flex; gap: 10px; align-items: center; }
-.otp-input { flex: 1; min-width: 0; padding: 14px 16px; border: 2px solid #FFE8E8; border-radius: 12px; font-size: 15px; background: #FFFCFC; }
+.search-box {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #FFE8E8;
+  border-radius: 12px;
+  font-size: 14px;
+  background: #FFFCFC;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.1);
+}
+
+.otp-btn { 
+  background: var(--primary-light); 
+  color: var(--primary); 
+  border: 2px solid var(--primary); 
+  font-weight: 600; 
+  width: 110px; 
+  min-width: 110px; 
+  max-width: 110px; 
+  height: 46px;
+  padding: 0; 
+  white-space: nowrap; 
+  flex-shrink: 0; 
+  display: inline-flex; 
+  align-items: center; 
+  justify-content: center; 
+  text-align: center;
+  font-size: 14px;
+}
+.otp-row { display: flex; gap: 8px; align-items: center; }
+.otp-input { flex: 1; min-width: 0; padding: 12px 14px; border: 2px solid #FFE8E8; border-radius: 12px; font-size: 14px; background: #FFFCFC; }
 .otp-input:focus { outline: none; border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.1); }
 
-.list-item { padding: 16px 0; border-bottom: 2px dashed #FFE8E8; display: flex; justify-content: space-between; align-items: center; }
+.list-item { padding: 14px 0; border-bottom: 2px dashed #FFE8E8; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .list-item:last-child { border-bottom: none; }
 .item-name { font-weight: 600; color: var(--dark); }
 .item-time { font-size: 12px; color: #95A5A6; }
@@ -513,15 +1120,15 @@ body {
 .status-expired { background: #FDEDEC; color: #E74C3C; }
 .status-pending { background: #FEF9E7; color: #F39C12; }
 
-.tabs { display: flex; background: #F8F9FA; padding: 4px; border-radius: 14px; margin: 16px; }
-.tab { flex: 1; text-align: center; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; color: #7F8C8D; transition: all 0.3s; }
+.tabs { display: flex; background: #F8F9FA; padding: 4px; border-radius: 12px; }
+.tab { flex: 1; text-align: center; padding: 10px; border-radius: 9px; cursor: pointer; font-weight: 600; color: #7F8C8D; transition: all 0.3s; font-size: 14px; }
 .tab.active { background: #fff; color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
 .machine-card { 
   background: #fff; 
-  border-radius: 16px; 
-  padding: 18px; 
-  margin: 10px 0; 
+  border-radius: 14px; 
+  padding: 16px; 
+  margin: 8px 0; 
   box-shadow: var(--shadow); 
   display: flex; 
   justify-content: space-between; 
@@ -530,17 +1137,71 @@ body {
   border: 2px solid transparent;
   gap: 16px;
 }
+.machine-card-sm { 
+  padding: 12px 14px; 
+  margin: 6px 0; 
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.1);
+}
 .machine-card:hover { border-color: var(--primary); transform: translateX(4px); }
 .machine-info { flex: 1; min-width: 0; }
-.machine-info h3 { font-size: 15px; margin-bottom: 6px; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.machine-info h3 { font-size: 14px; margin-bottom: 4px; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .machine-info p { font-size: 12px; color: #95A5A6; line-height: 1.4; }
+.machine-meta { margin-top: 8px; }
+.location-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0f766e;
+  background: rgba(78, 205, 196, 0.14);
+}
+.machine-side-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.machine-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-ghost-action,
+.btn-map {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+.btn-ghost-action {
+  color: var(--primary);
+  background: rgba(255, 107, 107, 0.1);
+}
+.btn-ghost-action:hover,
+.btn-map:hover {
+  transform: translateY(-1px);
+}
+.btn-map {
+  color: #0f766e;
+  background: rgba(78, 205, 196, 0.16);
+}
 .btn-open-door {
   background: var(--gradient);
   color: #fff;
   border: none;
-  padding: 10px 18px;
+  padding: 9px 14px;
   border-radius: 10px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -553,36 +1214,214 @@ body {
 .machine-status.offline { background: #E74C3C; }
 .status-text { font-size: 12px; color: #95A5A6; }
 
-.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.stat-item { background: linear-gradient(135deg, #FFF5F5 0%, #FFF 100%); padding: 20px; border-radius: 16px; text-align: center; border: 2px solid #FFE8E8; }
-.stat-value { font-size: 32px; font-weight: 700; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.stat-item { background: linear-gradient(135deg, #FFF5F5 0%, #FFF 100%); padding: 16px 12px; border-radius: 14px; text-align: center; border: 2px solid #FFE8E8; }
+.stat-value { font-size: 28px; font-weight: 700; background: var(--gradient); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
 .stat-label { font-size: 13px; color: #95A5A6; margin-top: 6px; font-weight: 500; }
 
-.section-title { font-size: 18px; font-weight: 700; color: var(--dark); margin-bottom: 16px; padding-left: 12px; border-left: 4px solid var(--primary); }
+.section-title { font-size: 17px; font-weight: 700; color: var(--dark); margin-bottom: 12px; padding-left: 10px; border-left: 4px solid var(--primary); }
+.section-title-tight { margin-bottom: 0; }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.view-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 107, 107, 0.08);
+  flex-shrink: 0;
+}
+.view-switch-btn {
+  border: none;
+  background: transparent;
+  color: #7f8c8d;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+.view-switch-btn.active {
+  color: var(--primary);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.12);
+}
 
-.quick-actions { display: flex; gap: 12px; margin: 16px; }
-.quick-action { flex: 1; background: var(--gradient); color: #fff; padding: 16px; border-radius: 14px; text-align: center; cursor: pointer; transition: all 0.3s; }
+.quick-actions { display: flex; gap: 10px; }
+.quick-action { flex: 1; background: var(--gradient); color: #fff; padding: 12px 10px; border-radius: 12px; text-align: center; cursor: pointer; transition: all 0.3s; }
 .quick-action:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
-.quick-action-icon { font-size: 24px; margin-bottom: 6px; }
-.quick-action-label { font-size: 13px; font-weight: 600; }
+.quick-action-icon { font-size: 20px; margin-bottom: 3px; }
+.quick-action-label { font-size: 12px; font-weight: 600; }
 
 .user-badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 14px; margin-top: 12px; }
 
-.bind-success { text-align: center; padding: 16px; }
-.bind-icon { font-size: 40px; margin-bottom: 12px; }
+.bind-success { text-align: center; padding: 12px 8px; }
+.bind-icon { font-size: 34px; margin-bottom: 10px; }
 .bind-label { color: var(--dark); font-weight: 600; }
-.bind-phone { color: var(--primary); font-size: 18px; font-weight: 700; margin: 8px 0; }
+.bind-phone { color: var(--primary); font-size: 17px; font-weight: 700; margin: 6px 0; }
+
+.machine-preview-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(78, 205, 196, 0.12) 0%, rgba(255, 255, 255, 0.95) 100%);
+  border: 1px solid rgba(78, 205, 196, 0.18);
+}
+.machine-preview-copy { min-width: 0; }
+.machine-preview-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: #0f766e; margin-bottom: 4px; }
+.machine-preview-name { font-size: 14px; font-weight: 700; color: var(--dark); margin-bottom: 3px; }
+.machine-preview-location { font-size: 12px; line-height: 1.5; color: #6b7280; }
+
+.nearby-map-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+.nearby-map-shell {
+  position: relative;
+  min-height: 220px;
+  flex: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  background: linear-gradient(180deg, #f7fafc 0%, #eef4f7 100%);
+}
+.nearby-map-container {
+  width: 100%;
+  height: 100%;
+}
+.nearby-map-tip {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+.nearby-machine-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.nearby-machine-strip::-webkit-scrollbar {
+  height: 4px;
+}
+.nearby-machine-strip::-webkit-scrollbar-thumb {
+  background: rgba(255, 107, 107, 0.18);
+  border-radius: 999px;
+}
+.nearby-machine-pill {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #fff;
+  color: var(--dark);
+  box-shadow: 0 2px 10px rgba(44, 62, 80, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
 
 .empty-tip, .empty-state p { text-align: center; color: #95A5A6; padding: 24px; }
+.empty-tip-compact { padding: 16px 8px; }
 .empty-icon { font-size: 48px; margin-bottom: 16px; }
 .empty-state { text-align: center; padding: 24px; }
 
-.tip { margin-top: 18px; font-size: 13px; color: #95A5A6; text-align: center; }
+.tip { margin-top: 14px; font-size: 12px; color: #95A5A6; text-align: center; }
 .tip strong { color: var(--primary); }
 
-.footer { padding: 16px; }
+.footer { padding-top: 4px; flex-shrink: 0; }
+
+@media (max-width: 480px) {
+  .header {
+    padding: 18px 16px 14px;
+  }
+
+  .header h1 {
+    font-size: 23px;
+  }
+
+  .header p,
+  .user-badge {
+    font-size: 13px;
+  }
+
+  .page-body,
+  .content-stack {
+    gap: 8px;
+  }
+
+  .page-body {
+    padding: 8px;
+  }
+
+  .card {
+    border-radius: 16px;
+    padding: 12px;
+  }
+
+  .quick-actions {
+    gap: 8px;
+  }
+
+  .stats-grid {
+    gap: 10px;
+  }
+}
+
+@media (max-height: 760px) {
+  .header {
+    padding: 18px 16px 14px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+  }
+
+  .page-body {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .card {
+    padding: 12px;
+  }
+
+  .quick-action {
+    padding: 10px 8px;
+  }
+
+  .btn {
+    padding: 12px;
+  }
+
+  .section-title {
+    margin-bottom: 10px;
+  }
+
+  .machine-card-sm {
+    padding: 10px 12px;
+  }
+
+  .search-box {
+    margin-bottom: 10px;
+  }
+}
 
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(44, 62, 80, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay-map { z-index: 1100; padding: 16px; }
 .modal { background: #fff; border-radius: 24px; padding: 28px; width: 90%; max-width: 360px; text-align: center; }
 .modal-icon { font-size: 48px; margin-bottom: 12px; }
 .modal h3 { color: var(--dark); margin-bottom: 8px; }
@@ -590,5 +1429,185 @@ body {
 .modal-text strong { color: var(--primary); }
 .modal .btn { margin-top: 12px; }
 
+.modal-map {
+  width: min(100%, 440px);
+  max-width: 440px;
+  padding: 18px;
+  text-align: left;
+  border-radius: 24px;
+}
+.map-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.map-modal-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.modal-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #f4f6f8;
+  color: #51606d;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.map-address {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #6b7280;
+}
+.map-shell {
+  position: relative;
+  height: 320px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f7fafc 0%, #eef4f7 100%);
+  border: 1px solid rgba(44, 62, 80, 0.08);
+}
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+.map-container-hidden {
+  visibility: hidden;
+}
+.map-state {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.map-state-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(247, 250, 252, 0.96) 0%, rgba(238, 244, 247, 0.96) 100%);
+}
+.map-state-error {
+  background: linear-gradient(180deg, #fff7f7 0%, #fff 100%);
+}
+.map-state p {
+  margin: 0;
+}
+.map-link-btn,
+.map-link-text {
+  color: #0f766e;
+  text-decoration: none;
+  font-weight: 700;
+}
+.map-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(78, 205, 196, 0.16);
+}
+.map-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.map-link-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.map-copy-actions {
+  display: flex;
+  gap: 8px;
+}
+.map-copy-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(255, 107, 107, 0.1);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.map-tip {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6b7280;
+}
+.map-link-nav {
+  min-width: 132px;
+}
+.nearby-cluster-marker {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(255, 107, 107, 0.28);
+  border: 3px solid rgba(255, 255, 255, 0.92);
+}
+
 .message-toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--dark); color: #fff; padding: 14px 28px; border-radius: 12px; z-index: 2000; font-weight: 500; }
+
+@media (max-width: 480px) {
+  .machine-actions {
+    gap: 6px;
+  }
+
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .btn-map,
+  .btn-open-door {
+    width: 100%;
+  }
+
+  .machine-preview-card,
+  .map-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .map-link-actions {
+    align-items: stretch;
+  }
+
+  .map-copy-actions {
+    flex-direction: column;
+  }
+
+  .map-shell {
+    height: 280px;
+  }
+}
 </style>
