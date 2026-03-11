@@ -166,7 +166,7 @@
           </div>
         </div>
 
-        <div class="card compact-card">
+        <div v-if="!isVolunteerUser" class="card compact-card">
           <div class="section-title">🤝 志愿者代领</div>
           <div v-if="!userInfo.volunteer_phone">
             <div class="input-group">
@@ -178,8 +178,11 @@
           <div v-else class="bind-success">
             <div class="bind-icon">🤝</div>
             <p class="bind-label">已绑定志愿者</p>
-            <p class="bind-phone">{{ userInfo.volunteer_phone }}</p>
-            <button class="btn btn-outline" @click="unbindVolunteer">解除绑定</button>
+            <p class="bind-info">
+              <span class="bind-name">{{ userInfo.volunteer_name || '志愿者' }}</span>
+              <span class="bind-phone">{{ userInfo.volunteer_phone }}</span>
+            </p>
+            <button class="btn btn-outline" @click="showUnbindConfirm">解除绑定</button>
           </div>
         </div>
       </div>
@@ -306,16 +309,30 @@
         </div>
 
         <div class="map-footer">
-          <div class="map-tip">{{ mapFooterText }}</div>
-          <div class="map-link-actions">
+          <div class="map-footer-left">
+            <div class="map-tip">{{ mapFooterText }}</div>
             <div class="map-copy-actions">
               <button class="map-copy-btn" @click="copyMachineAddress">复制地址</button>
-              <button class="map-copy-btn" @click="copyMachineCoordinates">复制经纬度</button>
+              <button class="map-copy-btn" @click="copyMachineCoordinates">复制坐标</button>
             </div>
-            <a v-if="mapNavigationUrl" :href="mapNavigationUrl" target="_blank" rel="noopener noreferrer" class="map-link-btn map-link-nav">导航到这里</a>
-            <a v-if="mapWalkingUrl" :href="mapWalkingUrl" target="_blank" rel="noopener noreferrer" class="map-link-text">步行路线外链</a>
+          </div>
+          <div class="map-link-actions">
+            <a v-if="mapNavigationUrl" :href="mapNavigationUrl" target="_blank" rel="noopener noreferrer" class="map-link-btn map-link-nav">
+              🧭 导航到这里
+            </a>
           </div>
         </div>
+      </div>
+    </div>
+    
+    <!-- 解除绑定确认弹窗 -->
+    <div v-if="showUnbindModal" class="modal-overlay" @click.self="showUnbindModal = false">
+      <div class="modal">
+        <div class="modal-icon">🤔</div>
+        <h3>确认解除绑定</h3>
+        <p class="modal-text">确定要解除与 <strong>{{ userInfo.volunteer_name || '志愿者' }}</strong> 的绑定关系吗？</p>
+        <button class="btn btn-primary" @click="confirmUnbind">确定解除</button>
+        <button class="btn btn-outline" @click="showUnbindModal = false">取消</button>
       </div>
     </div>
     
@@ -352,6 +369,7 @@ const nearbyView = ref('list')
 // UI状态
 const otpCountdown = ref(0)
 const showOpenModal = ref(false)
+const showUnbindModal = ref(false)
 const selectedMachine = ref(null)
 const opening = ref(false)
 const showMapModal = ref(false)
@@ -371,6 +389,10 @@ let nearbyClusterInstance = null
 const roleText = computed(() => {
   const map = { special_group: '特殊群体', merchant: '爱心商户' }
   return map[userInfo.value?.role] || '用户'
+})
+
+const isVolunteerUser = computed(() => {
+  return userInfo.value?.role === 'special_group' && userInfo.value?.category === '志愿者'
 })
 
 const filteredMachines = computed(() => {
@@ -874,18 +896,31 @@ const bindVolunteer = async () => {
     return
   }
   try {
-    await axios.post(`${API_BASE}/special/bind-volunteer`, null, { params: { token: token.value, volunteer_phone: volunteerPhone.value } })
+    const res = await axios.post(`${API_BASE}/special/bind-volunteer`, null, { params: { token: token.value, volunteer_phone: volunteerPhone.value } })
     showMessage('绑定成功')
     userInfo.value.volunteer_phone = volunteerPhone.value
+    userInfo.value.volunteer_name = res.data.volunteer_name || '志愿者'
+    volunteerPhone.value = ''
   } catch (e) {
     showMessage(e.response?.data?.detail || '绑定失败')
   }
 }
 
-const unbindVolunteer = () => {
-  userInfo.value.volunteer_phone = null
-  volunteerPhone.value = ''
-  showMessage('已解除绑定')
+const showUnbindConfirm = () => {
+  showUnbindModal.value = true
+}
+
+const confirmUnbind = async () => {
+  try {
+    await axios.post(`${API_BASE}/special/unbind-volunteer`, null, { params: { token: token.value } })
+    userInfo.value.volunteer_phone = null
+    userInfo.value.volunteer_name = null
+    volunteerPhone.value = ''
+    showUnbindModal.value = false
+    showMessage('已解除绑定')
+  } catch (e) {
+    showMessage(e.response?.data?.detail || '解绑失败')
+  }
 }
 
 const formatDate = (date) => {
@@ -1264,8 +1299,10 @@ body {
 
 .bind-success { text-align: center; padding: 12px 8px; }
 .bind-icon { font-size: 34px; margin-bottom: 10px; }
-.bind-label { color: var(--dark); font-weight: 600; }
-.bind-phone { color: var(--primary); font-size: 17px; font-weight: 700; margin: 6px 0; }
+.bind-label { color: var(--dark); font-weight: 600; margin-bottom: 8px; }
+.bind-info { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.bind-name { color: var(--dark); font-size: 16px; font-weight: 600; }
+.bind-phone { color: #64748b; font-size: 14px; }
 
 .machine-preview-card {
   display: flex;
@@ -1525,40 +1562,50 @@ body {
 }
 .map-footer {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 16px;
+  margin-top: 14px;
+}
+.map-footer-left {
+  flex: 1;
+  min-width: 0;
 }
 .map-link-actions {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
 .map-copy-actions {
   display: flex;
   gap: 8px;
+  margin-top: 10px;
 }
 .map-copy-btn {
   border: none;
-  border-radius: 10px;
-  padding: 8px 12px;
-  background: rgba(255, 107, 107, 0.1);
-  color: var(--primary);
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: #f1f5f9;
+  color: #475569;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+.map-copy-btn:hover {
+  background: #e2e8f0;
+  color: var(--dark);
 }
 .map-tip {
-  flex: 1;
   font-size: 12px;
-  line-height: 1.6;
-  color: #6b7280;
+  line-height: 1.5;
+  color: #64748b;
+  margin-bottom: 4px;
 }
 .map-link-nav {
-  min-width: 132px;
+  width: 100%;
+  min-width: auto;
 }
 .nearby-cluster-marker {
   width: 44px;
@@ -1599,11 +1646,22 @@ body {
   }
 
   .map-link-actions {
-    align-items: stretch;
+    width: 100%;
+  }
+
+  .map-link-nav {
+    text-align: center;
   }
 
   .map-copy-actions {
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .map-copy-btn {
+    flex: 1;
+    min-width: 80px;
+    text-align: center;
   }
 
   .map-shell {

@@ -197,6 +197,58 @@
             </div>
           </div>
           
+          <!-- 志愿者绑定管理 -->
+          <div v-if="currentView === 'volunteer-binds'">
+            <div class="volunteer-stats">
+              <div class="stat-card green">
+                <div class="stat-icon">✅</div>
+                <div class="stat-value">{{ volunteerBinds.total_binded || 0 }}</div>
+                <div class="stat-label">已绑定数量</div>
+              </div>
+              <div class="stat-card orange">
+                <div class="stat-icon">⏳</div>
+                <div class="stat-value">{{ volunteerBinds.total_unbinded || 0 }}</div>
+                <div class="stat-label">未绑定数量</div>
+              </div>
+              <div class="stat-card blue">
+                <div class="stat-icon">👥</div>
+                <div class="stat-value">{{ (volunteerBinds.volunteers || []).length }}</div>
+                <div class="stat-label">志愿者总数</div>
+              </div>
+            </div>
+            
+            <div class="table-card">
+              <h3 class="table-title">🤝 绑定关系列表</h3>
+              <el-table :data="volunteerBinds.bindings || []" border stripe>
+                <el-table-column label="特殊群体" min-width="200">
+                  <template #default="{row}">
+                    <div v-if="row.special_group">
+                      <div style="font-weight: 600;">{{ row.special_group.name }}</div>
+                      <div style="font-size: 12px; color: #666;">{{ row.special_group.phone }}</div>
+                      <div style="font-size: 12px; color: #999;">{{ row.special_group.category }} · {{ row.special_group.community }}</div>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="绑定关系" width="70" align="center">
+                  <template #default>
+                    <span style="font-size: 18px;">👉</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="志愿者" min-width="200">
+                  <template #default="{row}">
+                    <div v-if="row.volunteer">
+                      <div style="font-weight: 600; color: var(--el-color-primary);">{{ row.volunteer.name }}</div>
+                      <div style="font-size: 12px; color: #666;">{{ row.volunteer.phone }}</div>
+                      <div style="font-size: 12px; color: #999;">{{ row.volunteer.community }}</div>
+                    </div>
+                    <span v-else style="color: #999;">未绑定</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <p v-if="(volunteerBinds.bindings || []).length === 0" class="empty-tip">暂无绑定记录</p>
+            </div>
+          </div>
+          
           <!-- 领取记录 -->
           <div v-if="currentView === 'pickups'">
             <div class="table-card">
@@ -403,6 +455,7 @@ const AMAP_SECURITY_CODE = import.meta.env.VITE_AMAP_SECURITY_CODE || ''
 const menuItems = [
   { key: 'dashboard', icon: '📊', label: '数据概览' },
   { key: 'users', icon: '👥', label: '用户管理' },
+  { key: 'volunteer-binds', icon: '🤝', label: '志愿者绑定' },
   { key: 'machines', icon: '📦', label: '柜机管理' },
   { key: 'donations', icon: '🎁', label: '捐赠管理' },
   { key: 'pickups', icon: '📝', label: '领取记录' },
@@ -441,6 +494,7 @@ const donations = ref([])
 const donationFilter = ref({ status: '' })
 const pickups = ref([])
 const notifications = ref([])
+const volunteerBinds = ref({ bindings: [], volunteers: [], total_binded: 0, total_unbinded: 0 })
 const showMachineMapModal = ref(false)
 const adminMapMachine = ref(null)
 const adminMapLoading = ref(false)
@@ -816,6 +870,13 @@ const fetchDonations = async () => {
   } catch (e) { console.error(e) }
 }
 
+const fetchVolunteerBinds = async () => {
+  try {
+    const res = await axios.get(`${API_BASE}/admin/volunteer-binds`)
+    volunteerBinds.value = res.data || { bindings: [], volunteers: [], total_binded: 0, total_unbinded: 0 }
+  } catch (e) { console.error(e) }
+}
+
 const fetchPickups = async () => {
   try {
     const res = await axios.get(`${API_BASE}/admin/pickups`)
@@ -916,7 +977,7 @@ const initCharts = async () => {
 }
 
 watch(currentView, async (newView) => {
-  const fetchMap = { dashboard: fetchDashboard, users: fetchUsers, machines: fetchMachines, donations: fetchDonations, pickups: fetchPickups, notifications: fetchNotifications }
+  const fetchMap = { dashboard: fetchDashboard, users: fetchUsers, machines: fetchMachines, donations: fetchDonations, pickups: fetchPickups, notifications: fetchNotifications, 'volunteer-binds': fetchVolunteerBinds }
   if (fetchMap[newView]) fetchMap[newView]()
   if (['dashboard', 'analysis'].includes(newView)) setTimeout(initCharts, 100)
   if (newView !== 'machines') {
@@ -997,6 +1058,7 @@ body { font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-seri
 .content { padding: 28px 32px; }
 
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+.volunteer-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
 .stat-card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: var(--shadow); transition: all 0.3s; position: relative; overflow: hidden; }
 .stat-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; border-radius: 4px 0 0 4px; }
 .stat-card.blue::before { background: var(--gradient-blue); }

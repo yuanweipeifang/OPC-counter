@@ -273,6 +273,23 @@ def _reset_daily_if_needed(user: dict):
     if last_reset is None or last_reset.date() < now.date():
         store.update_user(user["id"], {"used_today": 0, "last_reset": now.isoformat()})
 
+
+def _is_volunteer_user(user: Optional[dict]) -> bool:
+    """统一判定志愿者身份。
+
+    当前数据模型中，志愿者不是独立 role，而是 special_group 下的 category=志愿者。
+    """
+    if not user:
+        return False
+    return user.get("role") == "special_group" and user.get("category") == "志愿者"
+
+
+def _is_bindable_special_group(user: Optional[dict]) -> bool:
+    """可绑定志愿者的对象必须是非志愿者的特殊群体。"""
+    if not user:
+        return False
+    return user.get("role") == "special_group" and not _is_volunteer_user(user)
+
 # ============= 认证接口 =============
 
 @app.post("/auth/login")
@@ -300,13 +317,22 @@ def login(request: LoginRequest):
         _reset_daily_if_needed(user)
         user = store.get_user_by_phone(phone)  # 重新获取
     
+    # 获取志愿者信息
+    volunteer_name = None
+    if user.get("volunteer_phone"):
+        volunteer = store.get_user_by_phone(user["volunteer_phone"])
+        if volunteer:
+            volunteer_name = volunteer.get("name")
+    
     return {
         "token": token,
         "phone": user["phone"],
         "name": user["name"],
         "role": user["role"],
         "daily_limit": user.get("daily_limit", 3),
-        "used_today": user.get("used_today", 0)
+        "used_today": user.get("used_today", 0),
+        "volunteer_phone": user.get("volunteer_phone"),
+        "volunteer_name": volunteer_name
     }
 
 @app.post("/auth/request_otp")
@@ -522,6 +548,49 @@ def list_notifications(skip: int = 0, limit: int = 20):
     """通知列表"""
     return {"notifications": store.get_notifications(skip=skip, limit=limit)}
 
+@app.get("/admin/volunteer-binds")
+def list_volunteer_binds():
+    """志愿者绑定关系列表"""
+    all_users = store.get_users(role=None, skip=0, limit=10000)[0]
+    
+    # 获取志愿者列表（category为"志愿者"的用户）
+    volunteers = [u for u in all_users if _is_volunteer_user(u)]
+    
+    # 获取真正需要绑定的特殊群体用户列表（排除志愿者本人）
+    special_groups = [u for u in all_users if _is_bindable_special_group(u)]
+    
+    # 构建绑定关系
+    bindings = []
+    for sg in special_groups:
+        if sg.get("volunteer_phone"):
+            # 找到对应的志愿者
+            volunteer = next((v for v in volunteers if v.get("phone") == sg["volunteer_phone"]), None)
+            bindings.append({
+                "special_group": {
+                    "id": sg.get("id"),
+                    "phone": sg.get("phone"),
+                    "name": sg.get("name"),
+                    "category": sg.get("category"),
+                    "community": sg.get("community")
+                },
+                "volunteer": {
+                    "id": volunteer.get("id") if volunteer else None,
+                    "phone": sg.get("volunteer_phone"),
+                    "name": volunteer.get("name") if volunteer else "未知",
+                    "community": volunteer.get("community") if volunteer else ""
+                } if sg.get("volunteer_phone") else None
+            })
+    
+    # 未绑定的特殊群体
+    unbinded = [sg for sg in special_groups if not sg.get("volunteer_phone")]
+    
+    return {
+        "total_binded": len(bindings),
+        "total_unbinded": len(unbinded),
+        "bindings": bindings,
+        "volunteers": volunteers
+    }
+
 # ============= 商户接口 =============
 
 @app.post("/merchant/donate")
@@ -600,15 +669,41 @@ def bind_volunteer(volunteer_phone: str, token: str):
     
     phone = payload.get("phone")
     user = store.get_user_by_phone(phone)
-    if not user or user.get("role") != "special_group":
+    if not _is_bindable_special_group(user):
         raise HTTPException(status_code=403, detail="无权限")
     
     volunteer = store.get_user_by_phone(volunteer_phone)
     if not volunteer:
         raise HTTPException(status_code=404, detail="志愿者用户不存在")
     
+    # 被绑定对象必须是真正的志愿者，且不能绑自己
+    if not _is_volunteer_user(volunteer):
+        raise HTTPException(status_code=400, detail="只能绑定志愿者用户")
+    if volunteer.get("phone") == user.get("phone"):
+        raise HTTPException(status_code=400, detail="不能绑定自己为志愿者")
+    
     store.update_user(user["id"], {"volunteer_phone": volunteer_phone})
-    return {"message": "绑定成功"}
+    return {
+        "message": "绑定成功",
+        "volunteer_phone": volunteer_phone,
+        "volunteer_name": volunteer.get("name")
+    }
+
+
+@app.post("/special/unbind-volunteer")
+def unbind_volunteer(token: str):
+    """解除志愿者绑定"""
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="无效的token")
+
+    phone = payload.get("phone")
+    user = store.get_user_by_phone(phone)
+    if not _is_bindable_special_group(user):
+        raise HTTPException(status_code=403, detail="无权限")
+
+    store.update_user(user["id"], {"volunteer_phone": None})
+    return {"message": "解绑成功"}
 
 # ============= 模拟硬件接口 =============
 

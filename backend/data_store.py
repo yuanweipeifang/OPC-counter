@@ -51,6 +51,48 @@ class DataStore:
         if not items:
             return 1
         return max(item.get("id", 0) for item in items) + 1
+
+    def _is_volunteer_user(self, user: Optional[Dict]) -> bool:
+        """志愿者通过 special_group + category=志愿者 标识。"""
+        if not user:
+            return False
+        return user.get("role") == "special_group" and user.get("category") == "志愿者"
+
+    def sanitize_volunteer_bindings(self) -> int:
+        """清理非法志愿者绑定关系。
+
+        非法场景：
+        1. 绑定对象不存在。
+        2. 绑定对象不是志愿者。
+        3. 绑定到自己。
+        4. 志愿者本人被当作受助对象绑定。
+        """
+        users = self.data.get("users", [])
+        phone_map = {u.get("phone"): u for u in users}
+        changed = 0
+
+        for user in users:
+            volunteer_phone = user.get("volunteer_phone")
+            if not volunteer_phone:
+                continue
+
+            target = phone_map.get(volunteer_phone)
+            invalid = False
+            if user.get("phone") == volunteer_phone:
+                invalid = True
+            elif self._is_volunteer_user(user):
+                invalid = True
+            elif not self._is_volunteer_user(target):
+                invalid = True
+
+            if invalid:
+                user["volunteer_phone"] = None
+                user["updated_at"] = datetime.utcnow().isoformat()
+                changed += 1
+
+        if changed:
+            self._save()
+        return changed
     
     # ============= 用户操作 =============
     
@@ -443,15 +485,15 @@ class DataStore:
             # 扬名街道各社区特殊群体用户
             special_users = [
                 # 扬名社区
-                {"phone": "18912340001", "name": "陈建国", "role": "special_group", "category": "残疾人", "community": "扬名社区", "daily_limit": 3},
-                {"phone": "18912340002", "name": "李秀英", "role": "special_group", "category": "低保户", "community": "扬名社区", "daily_limit": 3},
+                {"phone": "18912340001", "name": "陈建国", "role": "special_group", "category": "残疾人", "community": "扬名社区", "daily_limit": 3, "volunteer_phone": "18912340020"},
+                {"phone": "18912340002", "name": "李秀英", "role": "special_group", "category": "低保户", "community": "扬名社区", "daily_limit": 3, "volunteer_phone": "18912340020"},
                 {"phone": "18912340003", "name": "王阿婆", "role": "special_group", "category": "高龄老人", "community": "扬名社区", "daily_limit": 2},
                 # 五星社区
-                {"phone": "18912340004", "name": "张大明", "role": "special_group", "category": "残疾人", "community": "五星社区", "daily_limit": 3},
+                {"phone": "18912340004", "name": "张大明", "role": "special_group", "category": "残疾人", "community": "五星社区", "daily_limit": 3, "volunteer_phone": "18912340021"},
                 {"phone": "18912340005", "name": "刘桂芬", "role": "special_group", "category": "低保户", "community": "五星社区", "daily_limit": 3},
                 {"phone": "18912340006", "name": "孙老伯", "role": "special_group", "category": "独居老人", "community": "五星社区", "daily_limit": 2},
                 # 清名桥社区
-                {"phone": "18912340007", "name": "周阿姨", "role": "special_group", "category": "残疾人", "community": "清名桥社区", "daily_limit": 3},
+                {"phone": "18912340007", "name": "周阿姨", "role": "special_group", "category": "残疾人", "community": "清名桥社区", "daily_limit": 3, "volunteer_phone": "18912340022"},
                 {"phone": "18912340008", "name": "吴大爷", "role": "special_group", "category": "低保户", "community": "清名桥社区", "daily_limit": 3},
                 {"phone": "18912340009", "name": "郑奶奶", "role": "special_group", "category": "高龄老人", "community": "清名桥社区", "daily_limit": 2},
                 # 中桥社区
@@ -492,6 +534,9 @@ class DataStore:
             ]
             for m in merchants:
                 self.create_user(m)
+
+        # 每次启动都清理一次非法绑定，避免历史脏数据继续污染页面与统计
+        self.sanitize_volunteer_bindings()
         
         if not self.data.get("machines"):
             # 扬名街道各社区柜机 - 基于实际地理位置
