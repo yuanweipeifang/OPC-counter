@@ -201,6 +201,17 @@ class UserCreate(BaseModel):
     category: Optional[str] = None
     community: Optional[str] = None
 
+class UserUpdate(BaseModel):
+    phone: Optional[str] = None
+    name: Optional[str] = None
+    role: Optional[str] = None
+    category: Optional[str] = None
+    community: Optional[str] = None
+    daily_limit: Optional[int] = None
+    used_today: Optional[int] = None
+    volunteer_phone: Optional[str] = None
+    is_active: Optional[bool] = None
+
 class UserResponse(BaseModel):
     id: int
     phone: str
@@ -224,7 +235,7 @@ class DonationCreate(BaseModel):
     machine_id: str
     item_name: str
     quantity: int
-    expiry_days: int = 7
+    expiry_days: int = 1
 
 class RuleCreate(BaseModel):
     name: str
@@ -250,7 +261,7 @@ def create_token(phone: str) -> str:
     """生成JWT token"""
     payload = {
         "phone": phone,
-        "exp": datetime.utcnow() + timedelta(days=7)
+        "exp": datetime.utcnow() + timedelta(days=1)
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -273,27 +284,16 @@ def _reset_daily_if_needed(user: dict):
     if last_reset is None or last_reset.date() < now.date():
         store.update_user(user["id"], {"used_today": 0, "last_reset": now.isoformat()})
 
-
-def _is_volunteer_user(user: Optional[dict]) -> bool:
-    """统一判定志愿者身份。
-
-    当前数据模型中，志愿者不是独立 role，而是 special_group 下的 category=志愿者。
-    """
-    if not user:
-        return False
-    return user.get("role") == "special_group" and user.get("category") == "志愿者"
-
-
 def _is_bindable_special_group(user: Optional[dict]) -> bool:
     """可绑定志愿者的对象必须是非志愿者的特殊群体。"""
     if not user:
         return False
-    return user.get("role") == "special_group" and not _is_volunteer_user(user)
+    return user.get("role") == "special_group" and not store._is_volunteer_user(user)
 
 # ============= 认证接口 =============
 
 @app.post("/auth/login")
-def login(request: LoginRequest):
+def login(request: LoginRequest, req: Request):
     """
     手机号+验证码登录
     测试验证码: 123456
@@ -311,6 +311,9 @@ def login(request: LoginRequest):
     
     # 生成token
     token = create_token(phone)
+    
+    # 记录登录日志
+    store.create_login_log(phone, req.client.host if req.client else "")
     
     # 更新用户每日使用次数（如果是特殊群体）
     if user.get("role") == "special_group":
@@ -490,18 +493,70 @@ def import_users(data: dict):
     """导入用户"""
     users = data.get("users", [])
     imported = store.import_users(users)
+    store.create_admin_log("import_users", "admin", f"导入 {imported} 个用户")
     return {"message": f"成功导入 {imported} 个用户"}
 
 @app.get("/admin/users")
 def list_users(
     role: Optional[str] = None,
     category: Optional[str] = None,
+    phone: Optional[str] = None,
     skip: int = 0,
     limit: int = 50
 ):
     """用户列表"""
-    users, total = store.get_users(role=role, skip=skip, limit=limit)
+    users, total = store.get_users(role=role, category=category, phone=phone, skip=skip, limit=limit)
     return {"total": total, "users": users}
+
+@app.post("/admin/users")
+def create_user(request: UserCreate):
+    """创建用户"""
+    if store.get_user_by_phone(request.phone):
+        raise HTTPException(status_code=400, detail="手机号已存在")
+
+    user = store.create_user(request.model_dump())
+    store.create_admin_log("create_user", "admin", f"创建用户 {user.get('phone')}")
+    return {"message": "创建成功", "user": user}
+
+@app.put("/admin/users/{user_id}")
+def update_user(user_id: int, request: UserUpdate):
+    """更新用户"""
+    existing = store.get_user_by_id(user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    update_data = {k: v for k, v in request.model_dump().items() if v is not None}
+    if not update_data:
+        return {"message": "无更新内容", "user": existing}
+
+    new_phone = update_data.get("phone")
+    if new_phone and new_phone != existing.get("phone"):
+        conflict = store.get_user_by_phone(new_phone)
+        if conflict and conflict.get("id") != user_id:
+            raise HTTPException(status_code=400, detail="手机号已存在")
+
+    user = store.update_user(user_id, update_data)
+    store.create_admin_log("update_user", "admin", f"更新用户 {user.get('phone')}")
+    return {"message": "更新成功", "user": user}
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(user_id: int):
+    """删除用户"""
+    existing = store.get_user_by_id(user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    if existing.get("role") == "admin":
+        admin_count = len([u for u in store.get_users(role="admin", skip=0, limit=10000)[0] if u.get("is_active", True)])
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="至少保留一个管理员账号")
+
+    ok = store.delete_user(user_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="删除失败")
+
+    store.create_admin_log("delete_user", "admin", f"删除用户 {existing.get('phone')}")
+    return {"message": "删除成功"}
 
 @app.get("/admin/machines")
 def list_machines():
@@ -519,14 +574,16 @@ def demand_heatmap():
     return store.get_demand_heatmap()
 
 @app.get("/admin/donations")
-def list_donations(status: Optional[str] = None):
+def list_donations(status: Optional[str] = None, skip: int = 0, limit: int = 50):
     """捐赠列表"""
-    return {"donations": store.get_donations(status=status)}
+    donations, total = store.get_donations(status=status, skip=skip, limit=limit)
+    return {"total": total, "donations": donations}
 
 @app.get("/admin/pickups")
 def list_pickups(skip: int = 0, limit: int = 50):
     """领取记录列表"""
-    return {"pickups": store.get_pickups(skip=skip, limit=limit)}
+    pickups, total = store.get_pickups(skip=skip, limit=limit)
+    return {"total": total, "pickups": pickups}
 
 @app.get("/admin/rules")
 def get_rules():
@@ -541,6 +598,7 @@ def set_rule(request: RuleCreate):
         "daily_limit": request.daily_limit,
         "category_limits": request.category_limits
     })
+    store.create_admin_log("set_rule", "admin", f"设置规则 {request.name}")
     return {"message": "规则设置成功", "rule": rule}
 
 @app.get("/admin/notifications")
@@ -554,7 +612,7 @@ def list_volunteer_binds():
     all_users = store.get_users(role=None, skip=0, limit=10000)[0]
     
     # 获取志愿者列表（category为"志愿者"的用户）
-    volunteers = [u for u in all_users if _is_volunteer_user(u)]
+    volunteers = [u for u in all_users if store._is_volunteer_user(u)]
     
     # 获取真正需要绑定的特殊群体用户列表（排除志愿者本人）
     special_groups = [u for u in all_users if _is_bindable_special_group(u)]
@@ -677,7 +735,7 @@ def bind_volunteer(volunteer_phone: str, token: str):
         raise HTTPException(status_code=404, detail="志愿者用户不存在")
     
     # 被绑定对象必须是真正的志愿者，且不能绑自己
-    if not _is_volunteer_user(volunteer):
+    if not store._is_volunteer_user(volunteer):
         raise HTTPException(status_code=400, detail="只能绑定志愿者用户")
     if volunteer.get("phone") == user.get("phone"):
         raise HTTPException(status_code=400, detail="不能绑定自己为志愿者")

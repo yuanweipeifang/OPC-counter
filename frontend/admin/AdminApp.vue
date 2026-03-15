@@ -77,11 +77,14 @@
                 </el-select>
                 <el-input v-model="userFilter.phone" placeholder="搜索手机号" clearable style="width: 180px;"></el-input>
                 <el-button type="primary" @click="fetchUsers">🔍 搜索</el-button>
+                <el-button type="warning" @click="openCreateUserDialog">👤 新增用户</el-button>
                 <el-button type="success" @click="showImportDialog = true">➕ 导入用户</el-button>
               </div>
               
               <el-table :data="users" border stripe>
-                <el-table-column prop="phone" label="手机号" width="130"></el-table-column>
+                <el-table-column label="手机号" width="130">
+                  <template #default="{row}">{{ maskPhone(row.phone) }}</template>
+                </el-table-column>
                 <el-table-column prop="name" label="姓名" width="100"></el-table-column>
                 <el-table-column prop="role" label="角色" width="100">
                   <template #default="{row}">
@@ -94,6 +97,12 @@
                 <el-table-column prop="used_today" label="今日使用" width="80"></el-table-column>
                 <el-table-column prop="created_at" label="创建时间">
                   <template #default="{row}">{{ formatDate(row.created_at) }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="220" fixed="right">
+                  <template #default="{row}">
+                    <el-button size="small" type="primary" plain @click="openEditUserDialog(row)">编辑</el-button>
+                    <el-button size="small" type="danger" plain @click="deleteUser(row)">删除</el-button>
+                  </template>
                 </el-table-column>
               </el-table>
               
@@ -194,6 +203,10 @@
                   <template #default="{row}">{{ formatDate(row.created_at) }}</template>
                 </el-table-column>
               </el-table>
+              
+              <el-pagination style="margin-top: 20px; text-align: right;"
+                v-model:current-page="donationPage" :page-size="20" :total="donationTotal" @current-change="fetchDonations">
+              </el-pagination>
             </div>
           </div>
           
@@ -224,7 +237,7 @@
                   <template #default="{row}">
                     <div v-if="row.special_group">
                       <div style="font-weight: 600;">{{ row.special_group.name }}</div>
-                      <div style="font-size: 12px; color: #666;">{{ row.special_group.phone }}</div>
+                      <div style="font-size: 12px; color: #666;">{{ maskPhone(row.special_group.phone) }}</div>
                       <div style="font-size: 12px; color: #999;">{{ row.special_group.category }} · {{ row.special_group.community }}</div>
                     </div>
                   </template>
@@ -238,7 +251,7 @@
                   <template #default="{row}">
                     <div v-if="row.volunteer">
                       <div style="font-weight: 600; color: var(--el-color-primary);">{{ row.volunteer.name }}</div>
-                      <div style="font-size: 12px; color: #666;">{{ row.volunteer.phone }}</div>
+                      <div style="font-size: 12px; color: #666;">{{ maskPhone(row.volunteer.phone) }}</div>
                       <div style="font-size: 12px; color: #999;">{{ row.volunteer.community }}</div>
                     </div>
                     <span v-else style="color: #999;">未绑定</span>
@@ -272,6 +285,10 @@
                   <template #default="{row}">{{ formatDate(row.pickup_time) }}</template>
                 </el-table-column>
               </el-table>
+
+              <el-pagination style="margin-top: 20px; text-align: right;"
+                v-model:current-page="pickupPage" :page-size="20" :total="pickupTotal" @current-change="fetchPickups">
+              </el-pagination>
             </div>
           </div>
           
@@ -439,6 +456,37 @@
         <el-button type="primary" @click="importUsers">导入</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showUserDialog" :title="isEditUser ? '✏️ 编辑用户' : '👤 新增用户'" width="560px">
+      <el-form label-width="90px">
+        <el-form-item label="手机号">
+          <el-input v-model="userForm.phone" placeholder="请输入手机号"></el-input>
+        </el-form-item>
+        <el-form-item label="姓名">
+          <el-input v-model="userForm.name" placeholder="请输入姓名"></el-input>
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="userForm.role" style="width: 100%;">
+            <el-option label="特殊群体" value="special_group"></el-option>
+            <el-option label="商户" value="merchant"></el-option>
+            <el-option label="管理员" value="admin"></el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类别">
+          <el-input v-model="userForm.category" placeholder="如：低保户 / 志愿者 / 管理员"></el-input>
+        </el-form-item>
+        <el-form-item label="社区">
+          <el-input v-model="userForm.community" placeholder="请输入所属社区"></el-input>
+        </el-form-item>
+        <el-form-item label="每日限额" v-if="userForm.role === 'special_group'">
+          <el-input-number v-model="userForm.daily_limit" :min="1" :max="20" style="width: 100%;"></el-input-number>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showUserDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveUser">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -475,10 +523,23 @@ const token = ref(localStorage.getItem('admin_token') || '')
 const loginForm = ref({ phone: '', otp: '' })
 const showImportDialog = ref(false)
 const importForm = ref({ role: 'special_group', data: '' })
+const showUserDialog = ref(false)
+const isEditUser = ref(false)
+const editingUserId = ref(null)
+const userForm = ref({
+  phone: '',
+  name: '',
+  role: 'special_group',
+  category: '',
+  community: '',
+  daily_limit: 3
+})
 const ruleForm = ref({ daily_limit: 3, food_limit: 2, drink_limit: 2 })
 const machineFilter = ref({ keyword: '', status: '' })
 
 // 数据
+const maskPhone = (phone) => phone ? phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : ''
+
 const dashboard = ref({
   users: { total: 0, special_group: 0, merchant: 0, admin: 0 },
   machines: { total: 0, online: 0, offline: 0 },
@@ -490,9 +551,15 @@ const userTotal = ref(0)
 const userPage = ref(1)
 const userFilter = ref({ role: '', phone: '' })
 const machines = ref([])
+const machineTotal = ref(0)
+const machinePage = ref(1)
 const donations = ref([])
 const donationFilter = ref({ status: '' })
+const donationTotal = ref(0)
+const donationPage = ref(1)
 const pickups = ref([])
+const pickupTotal = ref(0)
+const pickupPage = ref(1)
 const notifications = ref([])
 const volunteerBinds = ref({ bindings: [], volunteers: [], total_binded: 0, total_unbinded: 0 })
 const showMachineMapModal = ref(false)
@@ -848,10 +915,89 @@ const fetchUsers = async () => {
   try {
     const params = { skip: (userPage.value - 1) * 20, limit: 20 }
     if (userFilter.value.role) params.role = userFilter.value.role
+    if (userFilter.value.phone) params.phone = userFilter.value.phone
     const res = await axios.get(`${API_BASE}/admin/users`, { params })
     users.value = res.data.users || []
     userTotal.value = res.data.total || 0
   } catch (e) { console.error(e) }
+}
+
+const resetUserForm = () => {
+  userForm.value = {
+    phone: '',
+    name: '',
+    role: 'special_group',
+    category: '',
+    community: '',
+    daily_limit: 3
+  }
+  editingUserId.value = null
+  isEditUser.value = false
+}
+
+const openCreateUserDialog = () => {
+  resetUserForm()
+  showUserDialog.value = true
+}
+
+const openEditUserDialog = (row) => {
+  isEditUser.value = true
+  editingUserId.value = row.id
+  userForm.value = {
+    phone: row.phone || '',
+    name: row.name || '',
+    role: row.role || 'special_group',
+    category: row.category || '',
+    community: row.community || '',
+    daily_limit: row.daily_limit || 3
+  }
+  showUserDialog.value = true
+}
+
+const saveUser = async () => {
+  if (!userForm.value.phone || !userForm.value.name || !userForm.value.role) {
+    alert('手机号、姓名、角色为必填项')
+    return
+  }
+
+  const payload = {
+    phone: userForm.value.phone,
+    name: userForm.value.name,
+    role: userForm.value.role,
+    category: userForm.value.category || null,
+    community: userForm.value.community || null
+  }
+  if (userForm.value.role === 'special_group') {
+    payload.daily_limit = userForm.value.daily_limit || 3
+  }
+
+  try {
+    if (isEditUser.value && editingUserId.value) {
+      await axios.put(`${API_BASE}/admin/users/${editingUserId.value}`, payload)
+    } else {
+      await axios.post(`${API_BASE}/admin/users`, payload)
+    }
+    showUserDialog.value = false
+    resetUserForm()
+    fetchUsers()
+    alert('保存成功')
+  } catch (e) {
+    alert(e.response?.data?.detail || '保存失败')
+  }
+}
+
+const deleteUser = async (row) => {
+  if (!window.confirm(`确认删除用户 ${row.name}（${maskPhone(row.phone)}）吗？`)) {
+    return
+  }
+
+  try {
+    await axios.delete(`${API_BASE}/admin/users/${row.id}`)
+    fetchUsers()
+    alert('删除成功')
+  } catch (e) {
+    alert(e.response?.data?.detail || '删除失败')
+  }
 }
 
 const fetchMachines = async () => {
@@ -863,10 +1009,11 @@ const fetchMachines = async () => {
 
 const fetchDonations = async () => {
   try {
-    const params = {}
+    const params = { skip: (donationPage.value - 1) * 20, limit: 20 }
     if (donationFilter.value.status) params.status = donationFilter.value.status
     const res = await axios.get(`${API_BASE}/admin/donations`, { params })
     donations.value = res.data.donations || []
+    donationTotal.value = res.data.total || 0
   } catch (e) { console.error(e) }
 }
 
@@ -879,8 +1026,10 @@ const fetchVolunteerBinds = async () => {
 
 const fetchPickups = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/admin/pickups`)
+    const params = { skip: (pickupPage.value - 1) * 20, limit: 20 }
+    const res = await axios.get(`${API_BASE}/admin/pickups`, { params })
     pickups.value = res.data.pickups || []
+    pickupTotal.value = res.data.total || 0
   } catch (e) { console.error(e) }
 }
 

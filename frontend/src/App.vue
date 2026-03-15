@@ -180,7 +180,7 @@
             <p class="bind-label">已绑定志愿者</p>
             <p class="bind-info">
               <span class="bind-name">{{ userInfo.volunteer_name || '志愿者' }}</span>
-              <span class="bind-phone">{{ userInfo.volunteer_phone }}</span>
+              <span class="bind-phone">{{ maskPhone(userInfo.volunteer_phone) }}</span>
             </p>
             <button class="btn btn-outline" @click="showUnbindConfirm">解除绑定</button>
           </div>
@@ -357,6 +357,7 @@ const activeTab = ref('machines')
 const message = ref('')
 
 // 表单
+const maskPhone = (phone) => phone ? phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : ''
 const loginForm = ref({ phone: '', otp: '' })
 const volunteerPhone = ref('')
 const donationForm = ref({ machine_id: '', item_name: '', quantity: 1, expiry_days: 7 })

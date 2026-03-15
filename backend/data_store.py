@@ -5,7 +5,7 @@ JSON 文件数据存储模块
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import uuid
 
@@ -20,13 +20,20 @@ class DataStore:
     
     def _load(self) -> Dict:
         """从文件加载数据"""
+        data = self._get_default_data()
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    loaded_data = json.load(f)
+                    data.update(loaded_data)
             except (json.JSONDecodeError, Exception):
                 pass
-        return self._get_default_data()
+        
+        # 确保新加的默认结构可用
+        for k, v in self._get_default_data().items():
+            if k not in data:
+                data[k] = v
+        return data
     
     def _get_default_data(self) -> Dict:
         """获取默认数据结构"""
@@ -37,7 +44,9 @@ class DataStore:
             "pickups": [],
             "rules": [{"id": 1, "name": "default", "daily_limit": 3, "category_limits": {"food": 2, "drink": 2}, "is_active": True}],
             "notifications": [],
-            "auth_tokens": []
+            "auth_tokens": [],
+            "admin_logs": [],
+            "login_logs": []
         }
     
     def _save(self):
@@ -58,20 +67,21 @@ class DataStore:
             return False
         return user.get("role") == "special_group" and user.get("category") == "志愿者"
 
-    def sanitize_volunteer_bindings(self) -> int:
-        """清理非法志愿者绑定关系。
-
-        非法场景：
-        1. 绑定对象不存在。
-        2. 绑定对象不是志愿者。
-        3. 绑定到自己。
-        4. 志愿者本人被当作受助对象绑定。
-        """
+    def sanitize_data(self) -> int:
+        """扩展数据校验：清理非法绑定并修复异常数据（如负数使用次数、缺少必需字段等）。"""
         users = self.data.get("users", [])
         phone_map = {u.get("phone"): u for u in users}
         changed = 0
 
         for user in users:
+            # 数据校验增强：修复负数使用次数和缺失的限制字段
+            if user.get("used_today", 0) < 0:
+                user["used_today"] = 0
+                changed += 1
+            if "daily_limit" not in user and user.get("role") == "special_group":
+                user["daily_limit"] = 3
+                changed += 1
+
             volunteer_phone = user.get("volunteer_phone")
             if not volunteer_phone:
                 continue
@@ -96,11 +106,22 @@ class DataStore:
     
     # ============= 用户操作 =============
     
-    def get_users(self, role: Optional[str] = None, skip: int = 0, limit: int = 50) -> tuple:
+    def get_users(
+        self,
+        role: Optional[str] = None,
+        category: Optional[str] = None,
+        phone: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> tuple:
         """获取用户列表"""
         users = self.data.get("users", [])
         if role:
             users = [u for u in users if u.get("role") == role]
+        if category:
+            users = [u for u in users if u.get("category") == category]
+        if phone:
+            users = [u for u in users if phone in str(u.get("phone", ""))]
         total = len(users)
         return users[skip:skip+limit], total
     
@@ -146,6 +167,16 @@ class DataStore:
                 self._save()
                 return user
         return None
+
+    def delete_user(self, user_id: int) -> bool:
+        """删除用户"""
+        users = self.data.get("users", [])
+        for i, user in enumerate(users):
+            if user.get("id") == user_id:
+                del users[i]
+                self._save()
+                return True
+        return False
     
     def import_users(self, users_data: List[Dict]) -> int:
         """批量导入用户"""
@@ -193,12 +224,13 @@ class DataStore:
     
     # ============= 捐赠操作 =============
     
-    def get_donations(self, status: Optional[str] = None) -> List[Dict]:
+    def get_donations(self, status: Optional[str] = None, skip: int = 0, limit: int = 50) -> tuple:
         """获取捐赠记录"""
         donations = self.data.get("donations", [])
         if status:
             donations = [d for d in donations if d.get("status") == status]
-        return donations
+        total = len(donations)
+        return donations[skip: skip + limit], total
     
     def get_donation_by_id(self, donation_id: int) -> Optional[Dict]:
         """根据ID获取捐赠"""
@@ -233,10 +265,10 @@ class DataStore:
     
     # ============= 领取操作 =============
     
-    def get_pickups(self, skip: int = 0, limit: int = 50) -> List[Dict]:
+    def get_pickups(self, skip: int = 0, limit: int = 50) -> tuple:
         """获取领取记录"""
         pickups = self.data.get("pickups", [])
-        return pickups[skip:skip+limit]
+        return pickups[skip:skip+limit], len(pickups)
     
     def get_pickups_by_user(self, user_id: int, limit: int = 20) -> List[Dict]:
         """获取用户的领取记录"""
@@ -334,6 +366,28 @@ class DataStore:
                 self._save()
                 return True
         return False
+        
+    # ============= 日志操作 =============
+    def create_admin_log(self, action: str, admin_phone: str, details: str = ""):
+        log_data = {
+            "id": self._get_next_id("admin_logs"),
+            "action": action,
+            "admin_phone": admin_phone,
+            "details": details,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        self.data.setdefault("admin_logs", []).append(log_data)
+        self._save()
+
+    def create_login_log(self, phone: str, ip_address: str = ""):
+        log_data = {
+            "id": self._get_next_id("login_logs"),
+            "phone": phone,
+            "ip_address": ip_address,
+            "login_time": datetime.utcnow().isoformat()
+        }
+        self.data.setdefault("login_logs", []).append(log_data)
+        self._save()
     
     # ============= 统计操作 =============
     
@@ -535,8 +589,8 @@ class DataStore:
             for m in merchants:
                 self.create_user(m)
 
-        # 每次启动都清理一次非法绑定，避免历史脏数据继续污染页面与统计
-        self.sanitize_volunteer_bindings()
+        # 每次启动都清理一次非法绑定和异常数据，避免历史脏数据继续污染页面与统计
+        self.sanitize_data()
         
         if not self.data.get("machines"):
             # 扬名街道各社区柜机 - 基于实际地理位置
