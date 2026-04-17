@@ -605,6 +605,18 @@ class DataStore:
             ]
             for m in machines:
                 self.create_machine(m)
+
+        # 本地联调补充固定测试设备，满足比赛文档要求的 deviceCode。
+        if not self.get_machine_by_id("91120149"):
+            self.create_machine({
+                "id": "91120149",
+                "name": "爱心柜-联调测试设备(91120149)",
+                "location": "本地联调专用设备",
+                "latitude": 31.5652,
+                "longitude": 120.3085,
+                "status": "online",
+                "api_url": "http://localhost:8000/mock"
+            })
         
         # 创建丰富的捐赠记录
         if not self.data.get("donations"):

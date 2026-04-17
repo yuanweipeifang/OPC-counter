@@ -10,16 +10,28 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+from threading import Thread
 import jwt
 import uuid
 import json
 import random
+import os
+import hashlib
+from urllib.request import Request as UrlRequest, urlopen
+from urllib.error import HTTPError, URLError
 
 from data_store import store
 
 # ============= 配置 =============
 SECRET_KEY = "lovecabinet-secret-key-2024"
 ALGORITHM = "HS256"
+SMARTVM_BASE_URL = os.getenv("SMARTVM_BASE_URL", "http://pre.smartvm.cn")
+SMARTVM_CLIENT_ID = os.getenv("SMARTVM_CLIENT_ID", "")
+SMARTVM_SIGN_KEY = os.getenv("SMARTVM_SIGN_KEY", "")
+SMARTVM_ENABLED = os.getenv("SMARTVM_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+SMARTVM_DEFAULT_DEVICE_CODE = os.getenv("SMARTVM_DEFAULT_DEVICE_CODE", "91120149").strip()
+# 文档未给出付款成功异步通知的固定路径，默认使用常见命名，可通过环境变量覆盖。
+SMARTVM_PAYMENT_NOTIFY_PATH = os.getenv("SMARTVM_PAYMENT_NOTIFY_PATH", "/api/pay/container/paySuccessNotify")
 
 # ============= Lifespan =============
 @asynccontextmanager
@@ -249,11 +261,109 @@ class LoginRequest(BaseModel):
 class OpenRequest(BaseModel):
     machine_id: str
     token: str
+    pay_style: str = "2"
+    door_num: Optional[str] = None
+
+
+class SmartvmGoodsRequest(BaseModel):
+    deviceCode: str
+    doorNum: Optional[str] = None
+
+
+class SmartvmOpenDoorRequest(BaseModel):
+    userId: str
+    eventId: str
+    deviceCode: str
+    payStyle: str
+    doorNum: Optional[str] = None
+    phone: str
+
+
+class SmartvmPaymentNotifyRequest(BaseModel):
+    orderNo: str
+    eventId: str
+    transactionId: str
+    deviceCode: str
+    amount: int
+    openId: Optional[str] = None
+
+class LocalTestConfig(BaseModel):
+    callback_base_url: str = "http://localhost:8000"
+    device_code: str = "91120149"
+    user_id: str = "u_local_001"
+    phone: str = "13800138000"
+
+
+class LocalTestTriggerRequest(BaseModel):
+    payload: Optional[dict] = None
+    callback_base_url: Optional[str] = None
+
+
+class LocalTestSignRequest(BaseModel):
+    payload: dict
 
 class CallbackPickup(BaseModel):
     machine_id: str
     operator: str
     items: List[dict]
+
+
+class SignedPushBase(BaseModel):
+    clientId: str
+    nonceStr: str
+    sign: str
+
+
+class DoorStatusPush(SignedPushBase):
+    eventId: str
+    deviceCode: str
+    status: str
+    doorIsOpen: Optional[str] = None
+
+
+class SettlementDetail(BaseModel):
+    goodsName: str
+    quantity: int
+    unitPrice: int
+    goodsId: str
+
+
+class SettlementPush(SignedPushBase):
+    orderNo: str
+    eventId: str
+    phone: str
+    deviceCode: str
+    amount: int
+    notifyUrl: str
+    detail: Optional[List[SettlementDetail]] = None
+
+
+class RetrySettlementPush(SignedPushBase):
+    orgOrderNo: Optional[str] = None
+    orOrderNo: Optional[str] = None
+    orderNo: str
+    eventId: str
+    phone: str
+    deviceCode: str
+    amount: int
+    noticeUrl: str
+    detail: Optional[List[SettlementDetail]] = None
+
+
+class RefundPush(SignedPushBase):
+    orderNo: str
+    transactionId: str
+    refundNo: str
+    deviceCode: str
+    amount: int
+
+
+LOCAL_TEST_STATE = {
+    "config": LocalTestConfig().model_dump(),
+    "logs": [],
+}
+
+MAX_LOCAL_TEST_LOGS = 200
 
 # ============= 辅助函数 =============
 
@@ -289,6 +399,231 @@ def _is_bindable_special_group(user: Optional[dict]) -> bool:
     if not user:
         return False
     return user.get("role") == "special_group" and not store._is_volunteer_user(user)
+
+
+def _random_nonce() -> str:
+    return uuid.uuid4().hex
+
+
+def _to_sign_value(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and value == "":
+        return None
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return str(value)
+
+
+def _build_sign(params: dict, sign_key: str) -> str:
+    sign_items = []
+    for key in sorted(params.keys()):
+        if key == "sign":
+            continue
+        sign_value = _to_sign_value(params.get(key))
+        if sign_value is None:
+            continue
+        sign_items.append(f"{key}={sign_value}")
+    string1 = "&".join(sign_items)
+    string_sign_temp = f"{string1}&key={sign_key}"
+    return hashlib.md5(string_sign_temp.encode("utf-8")).hexdigest().upper()
+
+
+def _local_test_log(action: str, request_payload: dict, response_payload: dict):
+    logs = LOCAL_TEST_STATE["logs"]
+    logs.append(
+        {
+            "timestamp": datetime.utcnow().isoformat(),
+            "action": action,
+            "request": request_payload,
+            "response": response_payload,
+        }
+    )
+    if len(logs) > MAX_LOCAL_TEST_LOGS:
+        del logs[0 : len(logs) - MAX_LOCAL_TEST_LOGS]
+
+
+def _local_test_config() -> dict:
+    return dict(LOCAL_TEST_STATE["config"])
+
+
+def _local_signed_payload(payload: dict) -> dict:
+    _require_smartvm_configured()
+    out = dict(payload)
+    out["clientId"] = SMARTVM_CLIENT_ID
+    out["nonceStr"] = out.get("nonceStr") or _random_nonce()
+    out["sign"] = _build_sign(out, SMARTVM_SIGN_KEY)
+    return out
+
+
+def _post_json_url(url: str, payload: dict, timeout: int = 10) -> dict:
+    req = UrlRequest(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            return {
+                "ok": True,
+                "status": resp.status,
+                "data": json.loads(raw) if raw else {},
+                "raw": raw,
+            }
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore") if exc.fp else ""
+        parsed = body
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            pass
+        return {"ok": False, "status": exc.code, "data": parsed, "raw": body}
+    except URLError as exc:
+        return {"ok": False, "status": 0, "data": {"error": str(exc.reason)}, "raw": str(exc.reason)}
+
+
+def _trigger_callback_in_background(url: str, payload: dict):
+    def _runner():
+        result = _post_json_url(url, payload, timeout=10)
+        _local_test_log("async-callback", {"url": url, "payload": payload}, result)
+    Thread(target=_runner, daemon=True).start()
+
+
+def _verify_signature(payload: dict) -> bool:
+    client_id = payload.get("clientId")
+    provided_sign = str(payload.get("sign", "")).upper()
+    if client_id != SMARTVM_CLIENT_ID or not provided_sign:
+        return False
+
+    data = dict(payload)
+    data.pop("sign", None)
+    expected = _build_sign(data, SMARTVM_SIGN_KEY)
+    return expected == provided_sign
+
+
+def _require_smartvm_configured():
+    if not SMARTVM_CLIENT_ID or not SMARTVM_SIGN_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="未配置 SMARTVM_CLIENT_ID 或 SMARTVM_SIGN_KEY，无法进行联调"
+        )
+
+
+def _smartvm_post(path: str, biz_payload: dict, timeout: int = 10) -> dict:
+    _require_smartvm_configured()
+    nonce = _random_nonce()
+    payload = {
+        **biz_payload,
+        "clientId": SMARTVM_CLIENT_ID,
+        "nonceStr": nonce,
+    }
+    payload["sign"] = _build_sign(payload, SMARTVM_SIGN_KEY)
+
+    base = SMARTVM_BASE_URL.rstrip("/")
+    endpoint = path if path.startswith("/") else f"/{path}"
+    url = f"{base}{endpoint}"
+
+    req = UrlRequest(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {"code": 500, "message": "空响应"}
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore") if exc.fp else ""
+        try:
+            parsed = json.loads(body) if body else {}
+            return {
+                "code": parsed.get("code", exc.code),
+                "message": parsed.get("message", f"HTTP {exc.code}"),
+                "raw": parsed,
+            }
+        except json.JSONDecodeError:
+            return {"code": exc.code, "message": body or f"HTTP {exc.code}"}
+    except URLError as exc:
+        return {"code": 503, "message": f"调用失败: {exc.reason}"}
+
+
+def _local_default_payload(kind: str) -> dict:
+    cfg = _local_test_config()
+    ts = int(datetime.utcnow().timestamp())
+    if kind == "door-status":
+        return {
+            "eventId": f"evt_local_{ts}",
+            "deviceCode": cfg["device_code"],
+            "status": "SUCCESS",
+            "doorIsOpen": "Y",
+        }
+    if kind == "settlement":
+        return {
+            "orderNo": f"ORD_LOCAL_{ts}",
+            "eventId": f"evt_local_{ts}",
+            "phone": cfg["phone"],
+            "deviceCode": cfg["device_code"],
+            "amount": 0,
+            "notifyUrl": "http://localhost:8000/mock-notify",
+            "detail": [{"goodsName": "测试商品", "quantity": 1, "unitPrice": 0, "goodsId": "G_LOCAL_001"}],
+        }
+    if kind == "retry-settlement":
+        return {
+            "orgOrderNo": f"ORD_LOCAL_{ts}",
+            "orderNo": f"ORD_LOCAL_RETRY_{ts}",
+            "eventId": f"evt_local_{ts}",
+            "phone": cfg["phone"],
+            "deviceCode": cfg["device_code"],
+            "amount": 100,
+            "noticeUrl": "http://localhost:8000/mock-notify",
+            "detail": [{"goodsName": "测试商品", "quantity": 1, "unitPrice": 100, "goodsId": "G_LOCAL_001"}],
+        }
+    if kind == "refund":
+        return {
+            "orderNo": f"ORD_LOCAL_{ts}",
+            "transactionId": f"TRA_LOCAL_{ts}",
+            "refundNo": f"REF_LOCAL_{ts}",
+            "deviceCode": cfg["device_code"],
+            "amount": 0,
+        }
+    raise HTTPException(status_code=400, detail=f"不支持的回调类型: {kind}")
+
+
+def _local_callback_path(kind: str) -> str:
+    mapping = {
+        "door-status": "/callbacks/smartvm/door-status",
+        "settlement": "/callbacks/smartvm/settlement",
+        "retry-settlement": "/callbacks/smartvm/retry-settlement",
+        "refund": "/callbacks/smartvm/refund",
+    }
+    path = mapping.get(kind)
+    if not path:
+        raise HTTPException(status_code=400, detail=f"不支持的回调类型: {kind}")
+    return path
+
+
+def _mock_smartvm_error(message: str, code: int = 400) -> dict:
+    return {"code": code, "message": message}
+
+
+def _resolve_smartvm_device_code(machine: dict) -> str:
+    # 优先使用柜机上配置的第三方设备号。
+    explicit = machine.get("smartvm_device_code")
+    if explicit:
+        return str(explicit)
+
+    machine_id = str(machine.get("id", ""))
+    if machine_id == "91120149":
+        return machine_id
+
+    # 本地联调默认映射到比赛测试设备号，避免 YM001 等本地编号导致“设备不存在”。
+    if SMARTVM_DEFAULT_DEVICE_CODE:
+        return SMARTVM_DEFAULT_DEVICE_CODE
+    return machine_id
 
 # ============= 认证接口 =============
 
@@ -393,10 +728,31 @@ def open_machine(request: OpenRequest):
         if user.get("used_today", 0) >= user.get("daily_limit", 3):
             raise HTTPException(status_code=403, detail="今日领取次数已用完")
     
-    # 模拟开门
-    result = _mock_open_door(machine["id"], machine.get("api_url", ""))
-    if not result.get("success"):
-        raise HTTPException(status_code=500, detail="开门失败")
+    order_no = None
+    smartvm_device_code = None
+    # 联调模式：按第三方文档请求映翰通平台开门
+    if SMARTVM_ENABLED:
+        smartvm_device_code = _resolve_smartvm_device_code(machine)
+        event_id = uuid.uuid4().hex
+        result = _smartvm_post(
+            "/api/pay/container/opendoor",
+            {
+                "userId": str(user.get("id")),
+                "eventId": event_id,
+                "deviceCode": smartvm_device_code,
+                "payStyle": str(request.pay_style),
+                "doorNum": request.door_num,
+                "phone": str(user.get("phone")),
+            },
+        )
+        if result.get("code") != 200:
+            raise HTTPException(status_code=502, detail=f"映翰通开门失败: {result.get('message', '未知错误')}")
+        order_no = (result.get("data") or {}).get("orderNo")
+    else:
+        # 本地演示模式：使用模拟开门
+        result = _mock_open_door(machine["id"], machine.get("api_url", ""))
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail="开门失败")
     
     # 更新用户使用次数
     if user.get("role") == "special_group":
@@ -406,8 +762,262 @@ def open_machine(request: OpenRequest):
         "message": "开门成功",
         "machine_id": machine["id"],
         "machine_name": machine["name"],
-        "mode": user["role"]
+        "mode": user["role"],
+        "orderNo": order_no,
+        "deviceCode": smartvm_device_code or str(machine["id"]),
     }
+
+
+@app.post("/integration/smartvm/get-cabinet-goods")
+def integration_get_cabinet_goods(request: SmartvmGoodsRequest):
+    """调用映翰通 获取设备商品列表接口。"""
+    result = _smartvm_post(
+        "/api/pay/container/getCabinetGoodsInfo",
+        request.model_dump(exclude_none=True),
+    )
+    return result
+
+
+@app.post("/integration/smartvm/opendoor")
+def integration_open_door(request: SmartvmOpenDoorRequest):
+    """按文档字段直连映翰通开门接口，便于接口联调。"""
+    result = _smartvm_post(
+        "/api/pay/container/opendoor",
+        request.model_dump(exclude_none=True),
+    )
+    return result
+
+
+@app.post("/integration/smartvm/payment-success-notify")
+def integration_payment_success_notify(request: SmartvmPaymentNotifyRequest):
+    """调用映翰通付款成功异步通知接口（路径可通过环境变量配置）。"""
+    result = _smartvm_post(
+        SMARTVM_PAYMENT_NOTIFY_PATH,
+        request.model_dump(exclude_none=True),
+    )
+    return result
+
+
+@app.post("/mock-smartvm/api/pay/container/getCabinetGoodsInfo")
+def mock_smartvm_get_cabinet_goods(payload: dict):
+    if not _verify_signature(payload):
+        return _mock_smartvm_error("签名错误")
+    if str(payload.get("deviceCode")) != "91120149":
+        return _mock_smartvm_error("设备不存在")
+    return {
+        "code": 200,
+        "message": "请求成功",
+        "data": [
+            {
+                "goodsCode": "LOCAL_GOODS_001",
+                "goodsId": "LOCAL_001",
+                "name": "本地联调矿泉水",
+                "price": 0,
+                "imageUrl": "",
+            },
+            {
+                "goodsCode": "LOCAL_GOODS_002",
+                "goodsId": "LOCAL_002",
+                "name": "本地联调饼干",
+                "price": 0,
+                "imageUrl": "",
+            },
+        ],
+    }
+
+
+@app.post("/mock-smartvm/api/pay/container/opendoor")
+def mock_smartvm_opendoor(payload: dict):
+    if not _verify_signature(payload):
+        return _mock_smartvm_error("签名错误")
+    if str(payload.get("deviceCode")) != "91120149":
+        return _mock_smartvm_error("设备不存在")
+
+    event_id = str(payload.get("eventId", ""))
+    phone = str(payload.get("phone", ""))
+    if not event_id or not phone:
+        return _mock_smartvm_error("参数缺失")
+
+    order_no = f"ORD_LOCAL_{int(datetime.utcnow().timestamp())}"
+    cfg = _local_test_config()
+    base = cfg["callback_base_url"].rstrip("/")
+    door_url = f"{base}/callbacks/smartvm/door-status"
+    settlement_url = f"{base}/callbacks/smartvm/settlement"
+
+    door_payload = _local_signed_payload(
+        {
+            "eventId": event_id,
+            "deviceCode": "91120149",
+            "status": "SUCCESS",
+            "doorIsOpen": "Y",
+        }
+    )
+    settlement_payload = _local_signed_payload(
+        {
+            "orderNo": order_no,
+            "eventId": event_id,
+            "phone": phone,
+            "deviceCode": "91120149",
+            "amount": 0,
+            "notifyUrl": "http://localhost:8000/mock-notify",
+            "detail": [{"goodsName": "本地联调矿泉水", "quantity": 1, "unitPrice": 0, "goodsId": "LOCAL_001"}],
+        }
+    )
+    _trigger_callback_in_background(door_url, door_payload)
+    _trigger_callback_in_background(settlement_url, settlement_payload)
+
+    return {"code": 200, "message": "请求成功", "data": {"orderNo": order_no}}
+
+
+@app.post("/mock-smartvm/api/pay/container/paySuccessNotify")
+def mock_smartvm_payment_notify(payload: dict):
+    if not _verify_signature(payload):
+        return _mock_smartvm_error("签名错误")
+    return {"code": 200, "message": "请求成功", "data": {"accepted": True}}
+
+
+@app.get("/local-test/status")
+def local_test_status():
+    cfg = _local_test_config()
+    base = cfg["callback_base_url"].rstrip("/")
+    return {
+        "smartvm_configured": bool(SMARTVM_CLIENT_ID and SMARTVM_SIGN_KEY),
+        "smartvm_enabled": SMARTVM_ENABLED,
+        "smartvm_base_url": SMARTVM_BASE_URL,
+        "client_id": SMARTVM_CLIENT_ID,
+        "device_code": cfg["device_code"],
+        "callback_base_url": cfg["callback_base_url"],
+        "callbacks": {
+            "door_status": f"{base}/callbacks/smartvm/door-status",
+            "settlement": f"{base}/callbacks/smartvm/settlement",
+            "retry_settlement": f"{base}/callbacks/smartvm/retry-settlement",
+            "refund": f"{base}/callbacks/smartvm/refund",
+        },
+    }
+
+
+@app.post("/local-test/config")
+def local_test_set_config(config: LocalTestConfig):
+    current = _local_test_config()
+    current.update(config.model_dump())
+    LOCAL_TEST_STATE["config"] = current
+    return {"message": "配置已更新", "config": current}
+
+
+@app.get("/local-test/logs")
+def local_test_logs():
+    return {"logs": LOCAL_TEST_STATE["logs"]}
+
+
+@app.delete("/local-test/logs")
+def local_test_clear_logs():
+    LOCAL_TEST_STATE["logs"] = []
+    return {"message": "日志已清空"}
+
+
+@app.post("/local-test/sign")
+def local_test_sign(request: LocalTestSignRequest):
+    payload = _local_signed_payload(request.payload)
+    return {"payload": payload}
+
+
+@app.post("/local-test/trigger/{kind}")
+def local_test_trigger(kind: str, request: LocalTestTriggerRequest):
+    payload = _local_default_payload(kind)
+    if request.payload:
+        payload.update(request.payload)
+
+    signed = _local_signed_payload(payload)
+    base_url = (request.callback_base_url or _local_test_config()["callback_base_url"]).rstrip("/")
+    callback_url = f"{base_url}{_local_callback_path(kind)}"
+
+    result = _post_json_url(callback_url, signed, timeout=10)
+    _local_test_log(kind, {"url": callback_url, "payload": signed}, result)
+    return {"kind": kind, "target": callback_url, "result": result}
+
+
+@app.post("/local-test/simulate-open-flow")
+def local_test_simulate_open_flow():
+    cfg = _local_test_config()
+    event_id = f"evt_local_{int(datetime.utcnow().timestamp())}"
+    signed_open_payload = _local_signed_payload(
+        {
+            "userId": cfg["user_id"],
+            "eventId": event_id,
+            "deviceCode": cfg["device_code"],
+            "payStyle": "2",
+            "doorNum": "1",
+            "phone": cfg["phone"],
+        }
+    )
+    open_result = _post_json_url(
+        f"{cfg['callback_base_url'].rstrip('/')}/mock-smartvm/api/pay/container/opendoor",
+        signed_open_payload,
+        timeout=10,
+    )
+
+    result = {"open_result": open_result}
+    _local_test_log("simulate-open-flow", {"eventId": event_id}, result)
+    return result
+
+
+@app.post("/callbacks/smartvm/door-status")
+def callback_smartvm_door_status(request: DoorStatusPush):
+    payload = request.model_dump(exclude_none=True)
+    if not _verify_signature(payload):
+        return {"code": 400, "message": "签名错误"}
+
+    # 仅做联调透传与状态落库
+    machine = store.get_machine_by_id(request.deviceCode)
+    if machine:
+        if request.status == "SUCCESS":
+            store.update_machine_status(request.deviceCode, "online")
+        elif request.status == "FAIL":
+            store.update_machine_status(request.deviceCode, "offline")
+
+    return {
+        "code": 200,
+        "message": "请求成功",
+        "result": {"eventId": request.eventId},
+    }
+
+
+@app.post("/callbacks/smartvm/settlement")
+def callback_smartvm_settlement(request: SettlementPush):
+    payload = request.model_dump(exclude_none=True)
+    if not _verify_signature(payload):
+        return {"code": 400, "message": "签名错误"}
+
+    # 尝试复用既有领取记录逻辑，若用户不存在也保持接口可测。
+    user = store.get_user_by_phone(request.phone)
+    machine = store.get_machine_by_id(request.deviceCode)
+    if user and machine:
+        items = []
+        for d in request.detail or []:
+            items.append({"name": d.goodsName, "quantity": d.quantity})
+        if items:
+            callback_settlement(CallbackPickup(machine_id=request.deviceCode, operator=request.phone, items=items))
+
+    return {"code": 200, "message": "请求成功"}
+
+
+@app.post("/callbacks/smartvm/retry-settlement")
+def callback_smartvm_retry_settlement(request: RetrySettlementPush):
+    payload = request.model_dump(exclude_none=True)
+    if not _verify_signature(payload):
+        return {"code": 400, "message": "签名错误"}
+
+    if request.amount <= 0:
+        return {"code": 500, "message": "等待用户付款"}
+    return {"code": 200, "message": "付款成功"}
+
+
+@app.post("/callbacks/smartvm/refund")
+def callback_smartvm_refund(request: RefundPush):
+    payload = request.model_dump(exclude_none=True)
+    if not _verify_signature(payload):
+        return {"code": 400, "message": "签名错误"}
+    return {"code": 200, "message": "请求成功"}
 
 @app.post("/machine/callback/结算接口")
 def callback_settlement(request: CallbackPickup):

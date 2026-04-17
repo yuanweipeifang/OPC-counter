@@ -10,12 +10,57 @@
 
 - 用户端：特殊群体与商户登录、开门领取、商户投放、地图查看
 - 管理端：用户管理、柜机管理、捐赠管理、领取记录、分析看板、规则配置、通知中心
+- 本地联调测试端：无公网时模拟第三方平台回调与联调流程（`/tester/`）
 
 ## 当前功能状态
 
 - 已支持用户管理 CRUD（增删改查）
 - 已支持捐赠与领取记录分页
 - 已支持登录日志与操作日志写入数据层
+
+## 映翰通接口联调（pre.smartvm.cn）
+
+后端已增加签名与联调能力，可直接对接你提供的测试平台。
+
+### 1. 环境变量配置
+
+在启动后端前设置：
+
+```bash
+export SMARTVM_ENABLED=true
+export SMARTVM_BASE_URL="http://pre.smartvm.cn"
+export SMARTVM_CLIENT_ID="你的clientId"
+export SMARTVM_SIGN_KEY="你的签名key"
+# 付款成功异步通知路径（若对方有明确路径请覆盖）
+export SMARTVM_PAYMENT_NOTIFY_PATH="/api/pay/container/paySuccessNotify"
+```
+
+### 2. 已对接的联调入口（本系统 -> 映翰通）
+
+- POST /integration/smartvm/get-cabinet-goods
+	- 对应：/api/pay/container/getCabinetGoodsInfo
+- POST /integration/smartvm/opendoor
+	- 对应：/api/pay/container/opendoor
+- POST /integration/smartvm/payment-success-notify
+	- 对应：付款成功异步通知（路径由 SMARTVM_PAYMENT_NOTIFY_PATH 指定）
+- POST /machine/open
+	- 当 SMARTVM_ENABLED=true 时，会自动走映翰通开门接口并返回 orderNo
+
+### 3. 已新增的回调验签入口（映翰通 -> 本系统）
+
+- POST /callbacks/smartvm/door-status
+- POST /callbacks/smartvm/settlement
+- POST /callbacks/smartvm/retry-settlement
+- POST /callbacks/smartvm/refund
+
+以上回调均按文档规则做 clientId/nonceStr/sign 验签；签名错误返回：
+
+```json
+{
+	"code": 400,
+	"message": "签名错误"
+}
+```
 - 已支持手机号脱敏展示
 - 已支持志愿者绑定关系校验与异常数据清理
 
@@ -109,6 +154,38 @@ npm run dev
 
 - 用户端：http://localhost:3000/
 - 管理端：http://localhost:3000/admin/
+- 本地联调测试端：http://localhost:3000/tester/
+
+## 无公网本地三端联调
+
+当无法提供公网回调地址时，可在本机完成“用户端 + 管理端 + 测试端”三端联调：
+
+1. 启动后端（建议开启联调签名配置）：
+
+```bash
+cd backend
+export SMARTVM_CLIENT_ID="你的clientId"
+export SMARTVM_SIGN_KEY="你的签名key"
+python main.py
+```
+
+2. 启动前端：
+
+```bash
+cd frontend
+npm run dev
+```
+
+3. 打开测试端：`http://localhost:3000/tester/`
+
+- 在“测试配置”中确认 `callback_base_url`（本机通常为 `http://localhost:8000`）
+- 复制并使用四个回调地址：
+  - 门状态：`/callbacks/smartvm/door-status`
+  - 订单完结：`/callbacks/smartvm/settlement`
+  - 补扣推送：`/callbacks/smartvm/retry-settlement`
+  - 退款：`/callbacks/smartvm/refund`
+- 点击测试端按钮即可触发对应回调，管理端可实时查看状态与记录变化
+- 测试设备已内置为 `91120149`（符合比赛文档要求）
 
 ## 测试账号
 
